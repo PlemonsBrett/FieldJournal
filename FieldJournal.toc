@@ -1,0 +1,10 @@
+## Interface: 16001
+## Title: Field Journal
+## Notes: A quiet journal of quests and conversations you have encountered in WoW Forever.
+## Author: Brett and Codex
+## Version: 0.8.0-beta
+## SavedVariables: FieldJournalDB
+## SavedVariablesPerCharacter: FieldJournalCharacterDB
+
+QuestTextPack.lua
+FieldJournal.lua
