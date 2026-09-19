@@ -9,6 +9,7 @@ _G.strmatch = string.match
 local specs = {
     "tests/libstub_spec.lua",
     "tests/callbackhandler_spec.lua",
+    "tests/acedb_spec.lua",
 }
 
 local passed, failed = 0, 0
