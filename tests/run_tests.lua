@@ -1,5 +1,5 @@
 -- Minimal Lua 5.1 test runner for FieldJournal's pure-logic modules.
--- Run from the repo root: lua5.1 tests/run_tests.lua
+-- Run from the repo root (PowerShell): & "C:\Program Files (x86)\Lua\5.1\lua.exe" tests/run_tests.lua
 -- Each file listed in `specs` must `return` a table of { name = function() ... end }.
 -- A test passes if its function runs without raising an error (use `assert`).
 
