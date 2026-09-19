@@ -3,10 +3,8 @@
 -- Each file listed in `specs` must `return` a table of { name = function() ... end }.
 -- A test passes if its function runs without raising an error (use `assert`).
 
--- Provide WoW API stubs for testing WoW libraries in plain Lua 5.1
-_G.strmatch = function(s, pattern, init)
-    return string.match(tostring(s), pattern, init)
-end
+-- Provide WoW API globals that vendored libraries call but plain Lua 5.1 doesn't have.
+_G.strmatch = string.match
 
 local specs = {
     "tests/libstub_spec.lua",
