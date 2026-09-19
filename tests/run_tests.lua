@@ -11,6 +11,7 @@ local specs = {
     "tests/callbackhandler_spec.lua",
     "tests/acedb_spec.lua",
     "tests/aceserializer_spec.lua",
+    "tests/libdeflate_spec.lua",
 }
 
 local passed, failed = 0, 0
