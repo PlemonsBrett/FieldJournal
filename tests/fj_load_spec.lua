@@ -6,6 +6,7 @@ local MODULES = {
     "Core/Bootstrap.lua",
     "Core/Database.lua",
     "Core/Migrations.lua",
+    "Core/Backup.lua",
     "Core/SlashCommands.lua",
     "Core/DevTools.lua",
     "Data/QuestLog.lua",
@@ -57,6 +58,10 @@ local function test_all_modules_load_into_one_namespace()
     assertFunctions(fj.Migrations, "FieldJournal.Migrations",
         {"run", "migrateLegacy", "legacyCharacterKey", "accountSlice", "counts",
          "mergeList", "mergeIntoCharacter", "highestOrder", "countText"})
+    assert(type(fj.Backup) == "table", "FieldJournal.Backup is missing")
+    assertFunctions(fj.Backup, "FieldJournal.Backup",
+        {"snapshotData", "shouldCapture", "capture", "describe"})
+    assert(fj.Backup.SNAPSHOT_LIMIT == 5, "the rotating ring must keep five snapshots")
     assertFunctions(fj.QuestLog, "FieldJournal.QuestLog",
         {"recoveredBody", "addEntry", "questTitle", "findUniqueQuestMention", "updateNoteBody",
          "captureNotePage", "captureSpeech", "flushPendingSpeech", "isPlaceholder",
