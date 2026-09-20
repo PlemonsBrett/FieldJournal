@@ -6,8 +6,10 @@
 ## SavedVariables: FieldJournalDB
 ## SavedVariablesPerCharacter: FieldJournalCharacterDB
 
+Core/ClientCompat.lua
 Libs/LibStub/LibStub.lua
 Libs/CallbackHandler-1.0/CallbackHandler-1.0.lua
+Libs/AceDB-3.0/AceDB-3.0.lua
 Libs/AceSerializer-3.0/AceSerializer-3.0.lua
 Libs/LibDeflate/LibDeflate.lua
 assets/QuestTextPack.lua
