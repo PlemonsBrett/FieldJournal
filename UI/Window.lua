@@ -4,7 +4,6 @@ local FieldJournal = select(2, ...)
 FieldJournal.UI = FieldJournal.UI or {}
 
 local clean = FieldJournal.clean
-local currentZone = FieldJournal.currentZone
 
 local rows = {}
 local visibleKeys = {}

@@ -1,6 +1,6 @@
 local env = dofile("tests/wow_env.lua")
 
--- Updated in the task that moves these functions into Core/Bootstrap.lua.
+-- These functions live in Core/Bootstrap.lua.
 local MODULES = {
     "Core/Bootstrap.lua",
 }

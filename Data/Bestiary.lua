@@ -124,7 +124,7 @@ local function captureLootSlots()
 end
 
 local function commitLootSlot(slot)
-    local db, bestiary, craftEvents = FieldJournal.db, FieldJournal.bestiary, FieldJournal.craftEvents
+    local db, bestiary = FieldJournal.db, FieldJournal.bestiary
     local loot = lootSlots[slot]
     lootSlots[slot] = nil
     if not loot then return end

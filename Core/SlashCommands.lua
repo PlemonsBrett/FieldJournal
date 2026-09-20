@@ -11,7 +11,7 @@ SlashCmdList.FIELDJOURNAL = function(message)
     if command == "repair" then
         FieldJournal.loadedCharacterKey = nil
         FieldJournal.initializeCharacter()
-    FieldJournal.UI.RefreshIfShown()
+        FieldJournal.UI.RefreshIfShown()
         print("Field Journal: restored the bestiary index from saved encounters where needed.")
         return
     end
