@@ -14,6 +14,7 @@ Libs/LibDeflate/LibDeflate.lua
 assets/QuestTextPack.lua
 Core/Bootstrap.lua
 Core/Database.lua
+Core/Migrations.lua
 Core/SlashCommands.lua
 Data/QuestLog.lua
 Data/Bestiary.lua
