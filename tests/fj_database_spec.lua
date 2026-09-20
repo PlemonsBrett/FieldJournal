@@ -198,6 +198,40 @@ local function test_acedb_survives_each_guarded_global_throwing()
     end
 end
 
+-- Core/Backup.lua deep-copies db.char into every snapshot and deep-copies a
+-- snapshot back out on restore. Both directions depend on this being a true
+-- independent copy, so it is published rather than re-implemented there.
+local function test_deep_copy_is_a_true_independent_copy()
+    local fj = loadStack(true)
+    local deepCopy = fj.Database.deepCopy
+    assert(type(deepCopy) == "function", "Core/Database.lua must publish deepCopy")
+
+    assert(deepCopy(7) == 7, "a number must pass straight through")
+    assert(deepCopy("text") == "text", "a string must pass straight through")
+    assert(deepCopy(nil) == nil, "nil must pass straight through")
+
+    local source = {
+        name = "Wolf",
+        places = {Glade = {count = 2}},
+        list = {{guid = "g1"}, {guid = "g2"}},
+    }
+    local copy = deepCopy(source)
+    assert(copy ~= source, "the top-level table must be a new table")
+    assert(copy.places ~= source.places, "a nested table must be a new table")
+    assert(copy.places.Glade ~= source.places.Glade, "the copy must be deep, not two levels")
+    assert(copy.list[2].guid == "g2", "array parts must be copied too")
+    assert(copy.list[2] ~= source.list[2], "array members must be new tables")
+
+    source.places.Glade.count = 99
+    source.name = "changed"
+    assert(copy.places.Glade.count == 2, "mutating the source must not reach the copy")
+    assert(copy.name == "Wolf", "mutating the source must not reach the copy")
+
+    copy.places.Glade.count = 1
+    assert(source.places.Glade.count == 99, "mutating the copy must not reach the source")
+    clearClient()
+end
+
 return {
     test_acedb_initializes_on_a_client_with_a_broken_region = test_acedb_initializes_on_a_client_with_a_broken_region,
     test_defaults_populate_the_character_section = test_defaults_populate_the_character_section,
@@ -206,4 +240,5 @@ return {
     test_acedb_survives_a_nil_realm_and_a_nil_character_name = test_acedb_survives_a_nil_realm_and_a_nil_character_name,
     test_acedb_survives_each_guarded_global_being_completely_absent = test_acedb_survives_each_guarded_global_being_completely_absent,
     test_acedb_survives_each_guarded_global_throwing = test_acedb_survives_each_guarded_global_throwing,
+    test_deep_copy_is_a_true_independent_copy = test_deep_copy_is_a_true_independent_copy,
 }

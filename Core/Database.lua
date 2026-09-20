@@ -82,6 +82,12 @@ local function deepCopy(src)
     return dst
 end
 
+-- Published for Core/Backup.lua, which deep-copies db.char into every snapshot
+-- and deep-copies a snapshot back out again on restore. Both directions must
+-- use the same copy this file already uses for the legacy globals -- three
+-- slightly different deep copies in one addon is how an aliasing bug ships.
+Database.deepCopy = deepCopy
+
 -- Grab references to every pre-AceDB global before AceDB:New touches the
 -- SavedVariables table. AceDB reuses the same table object and its logout
 -- handler only prunes the sections it knows about, so deep-copy here to ensure

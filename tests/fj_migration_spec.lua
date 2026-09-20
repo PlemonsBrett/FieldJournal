@@ -216,6 +216,48 @@ local function test_legacy_character_key_resolves_a_stale_realm_prefix()
         "another character's key must never be adopted")
 end
 
+-- Core/Backup.lua calls this after a restore, to lift nextOrder above every
+-- record it just put back so the next new record cannot collide with one of
+-- them. It is published rather than re-implemented there.
+local function test_highest_order_scans_every_collection()
+    local fj = load()
+    assert(type(fj.Migrations.highestOrder) == "function",
+        "Core/Migrations.lua must publish highestOrder")
+    assert(fj.Migrations.highestOrder(freshChar()) == 0, "an empty character has no order at all")
+
+    local charData = freshChar()
+    charData.entries["quest:1"] = {key = "quest:1", order = 11}
+    assert(fj.Migrations.highestOrder(charData) == 11, "entries must be scanned")
+
+    charData.encounters[1] = {guid = "g1", order = 22}
+    assert(fj.Migrations.highestOrder(charData) == 22, "encounters must be scanned")
+
+    charData.diaryEvents[1] = {key = "diary:1", order = 33}
+    assert(fj.Migrations.highestOrder(charData) == 33, "diary events must be scanned")
+
+    charData.craftEvents[1] = {key = "craft:1", order = 44}
+    assert(fj.Migrations.highestOrder(charData) == 44, "craft events must be scanned")
+
+    charData.bestiary["creature:1"] = {key = "creature:1", order = 55}
+    assert(fj.Migrations.highestOrder(charData) == 55, "the bestiary must be scanned")
+
+    charData.entries["quest:2"] = {key = "quest:2", order = "not a number"}
+    charData.encounters[2] = "not a table"
+    assert(fj.Migrations.highestOrder(charData) == 55, "malformed records must be skipped, not thrown on")
+end
+
+-- Core/Backup.lua prints the same count sentence when it lists the ring, so the
+-- wording stays identical across migration output, /fj backup and /fj status.
+local function test_count_text_formats_all_five_collections()
+    local fj = load()
+    assert(type(fj.Migrations.countText) == "function",
+        "Core/Migrations.lua must publish countText")
+    local text = fj.Migrations.countText({entries = 1, encounters = 2, diaryEvents = 3,
+        craftEvents = 4, bestiary = 5})
+    assert(text == "1 entries, 2 encounters, 3 diary events, 4 craft events, 5 bestiary species",
+        "the count sentence changed unexpectedly: " .. text)
+end
+
 return {
     test_migrates_the_old_account_shape_for_the_current_character = test_migrates_the_old_account_shape_for_the_current_character,
     test_is_idempotent_and_runs_only_once = test_is_idempotent_and_runs_only_once,
@@ -225,4 +267,6 @@ return {
     test_distinguishes_reused_guids_from_true_cross_source_duplicates = test_distinguishes_reused_guids_from_true_cross_source_duplicates,
     test_logs_counts_before_and_after = test_logs_counts_before_and_after,
     test_legacy_character_key_resolves_a_stale_realm_prefix = test_legacy_character_key_resolves_a_stale_realm_prefix,
+    test_highest_order_scans_every_collection = test_highest_order_scans_every_collection,
+    test_count_text_formats_all_five_collections = test_count_text_formats_all_five_collections,
 }
