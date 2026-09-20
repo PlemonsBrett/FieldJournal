@@ -5,6 +5,7 @@ local env = dofile("tests/wow_env.lua")
 local MODULES = {
     "Core/Bootstrap.lua",
     "UI/Widgets.lua",
+    "UI/NoteEditor.lua",
     "FieldJournal.lua",
 }
 
@@ -26,6 +27,8 @@ local function test_all_modules_load_into_one_namespace()
          "mergeList", "mergeCharacterCollections", "mergeAccountRecovery"})
     assertFunctions(fj.UI, "FieldJournal.UI", {"Refresh", "RefreshIfShown"})
     assertFunctions(fj.UI, "FieldJournal.UI", {"makeLabel", "coloredRectangle", "makeButton"})
+    assertFunctions(fj.UI, "FieldJournal.UI",
+        {"questOptions", "refreshQuestPicker", "openQuestPicker", "createNoteEditor", "createQuestPicker"})
 end
 
 local function test_refresh_if_shown_is_safe_without_a_window()
