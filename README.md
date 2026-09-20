@@ -7,11 +7,13 @@ Open the journal with `/fj` or `/fieldjournal`. This version has four tabs:
 - **Bestiary** counts creatures seen falling, their locations, and items actually looted from those creatures. Counts are personal observations, not drop rates.
 - **Crafting & gathering** records loot from world objects, completed crafts reported by the client, and skill milestones at 20, 25, 35, 40, 50, 75, 100 and every 25 thereafter.
 
-Records are saved per character in `FieldJournalDB`. The addon never registers the protected combat log event. Kill detection uses party kill and observed unit death events; missing client events can leave gaps. Loot is attached to a creature or object only when the loot window supplies its source GUID and the item is actually taken. Merchant entries compare bags and money while a merchant is open; unrelated simultaneous changes can affect the account. Speech and note links can be changed manually from the quest tab.
+Records are saved per character in `FieldJournalDB` (managed by AceDB-3.0; existing pre-AceDB data migrates automatically the first time each character logs in). The addon never registers the protected combat log event. Kill detection uses party kill and observed unit death events; missing client events can leave gaps. Loot is attached to a creature or object only when the loot window supplies its source GUID and the item is actually taken. Merchant entries compare bags and money while a merchant is open; unrelated simultaneous changes can affect the account. Speech and note links can be changed manually from the quest tab.
 
 ## Install and update
 
 Copy the `FieldJournal` folder into the beta client's `Interface/AddOns` folder. The existing addon can be updated while the game is running, then loaded with `/reload`. This build uses the existing TOC file list, so no relog is needed. SavedVariables should not be edited while the game is running.
+
+**WoW Forever Beta SavedVariables bug:** this client has a known bug where addon SavedVariables are written to disk correctly but fail to load back in on `/reload` or a cold client start ([tracked upstream](https://github.com/ClassicWoWCommunity/forever-bugs/issues/34)). Left unaddressed, this can look like Field Journal losing your journal — in practice the data is silently going unread each session and then getting overwritten with whatever partial state the client actually loaded, which *does* destroy real data over repeated reloads. Install [ForeverSVFix](https://github.com/nobewayo/ForeverSVFix) to work around it (it loads the SavedVariables file through the addon's normal file loader, which still works, instead of the client's broken special-case loader). After installing or updating Field Journal, re-run ForeverSVFix's "Repair after addon updates" step, and if you edit `FieldJournal.toc` by hand, keep its injected `## X-ForeverSVFix:` header line and the two loader lines it adds at the top of the file list.
 
 ## Quick validation
 
