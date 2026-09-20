@@ -7,7 +7,28 @@ Open the journal with `/fj` or `/fieldjournal`. This version has four tabs:
 - **Bestiary** counts creatures seen falling, their locations, and items actually looted from those creatures. Counts are personal observations, not drop rates.
 - **Crafting & gathering** records loot from world objects, completed crafts reported by the client, and skill milestones at 20, 25, 35, 40, 50, 75, 100 and every 25 thereafter.
 
-Records are saved per character in `FieldJournalDB` (managed by AceDB-3.0; existing pre-AceDB data migrates automatically the first time each character logs in). The addon never registers the protected combat log event. Kill detection uses party kill and observed unit death events; missing client events can leave gaps. Loot is attached to a creature or object only when the loot window supplies its source GUID and the item is actually taken. Merchant entries compare bags and money while a merchant is open; unrelated simultaneous changes can affect the account. Speech and note links can be changed manually from the quest tab.
+The addon never registers the protected combat log event. Kill detection uses party kill and observed unit death events; missing client events can leave gaps. Loot is attached to a creature or object only when the loot window supplies its source GUID and the item is actually taken. Merchant entries compare bags and money while a merchant is open; unrelated simultaneous changes can affect the account. Speech and note links can be changed manually from the quest tab.
+
+See [CHANGELOG.md](CHANGELOG.md) for the version history.
+
+## Current status
+
+This is beta software, developed and tested against one live account. The codebase is split into a namespaced module layout (`Core/`, `Data/`, `UI/`) with a hand-rolled Lua test suite (`tests/run_tests.lua`).
+
+Journal data is stored per character via AceDB-3.0 (`FieldJournalDB.char`). Existing data from before this migration is imported automatically, once, the first time each character logs in — see [CHANGELOG.md](CHANGELOG.md) for details. The old data is never deleted, only read, so it remains a fallback if anything about the migration ever needs to be redone.
+
+There is currently no rotating backup, no manual export/import, and no guarantee that a manual edit to an entry survives auto-regeneration or a future merge — see Roadmap below.
+
+## Roadmap
+
+This follows a phased resilience plan (`docs/superpowers/specs/2026-09-19-phase1-resilience-design.md` in this repo's history, not distributed with the addon). Remaining work:
+
+- **Rotating self-heal backups** — an automatic snapshot of each character's data taken at login, capped and pruned, with a redesigned `/fj repair` that can restore from it. Replaces the old hand-maintained `FieldJournalRecoveryDB` snapshot pattern entirely.
+- **Export / Import** — a manual `/fj export` / `/fj import` safety valve so players can back up or transfer their own data without touching SavedVariables files directly.
+- **Edit-safety guarantees** — a per-record `edited` flag so a manual correction (via the note editor) is never silently overwritten by auto-regeneration, a merge, or a backup restore.
+- **Repository polish** — CONTRIBUTING notes and a CLAUDE.md for future coding-agent sessions, once the data layer above has proven stable.
+
+None of this is scheduled; it lands as time allows.
 
 ## Install and update
 
@@ -23,6 +44,10 @@ Copy the `FieldJournal` folder into the beta client's `Interface/AddOns` folder.
 4. Learn a spell at a trainer, gather from a world object, and craft an item. Check the diary and crafting tabs.
 5. `/reload` again and confirm those entries remain.
 
+## Saved data
+
+WoW writes `FieldJournalDB` to the account's `WTF/Account/<account>/SavedVariables/FieldJournal.lua` on `/reload` and logout. `/fj status` prints the current character key, schema version, migration state, and saved encounter/bestiary/crafting counts. If the bestiary list appears empty, use `/fj repair` to rebuild its index from the encounter history, then inspect the Bestiary tab. Do not replace the live SavedVariables file while the game is running.
+
 ## Earlier quest text
 
 `QuestTextPack.lua` contains a small set of verified descriptions extracted from this beta client's quest cache. The completed quest API does not return the original conversations or completion time, so recovered entries are labeled as recovered descriptions. `tools/extract_quest_cache.py` can refresh that pack outside the game after the client has cached more quests. The pack is incomplete and beta specific.
@@ -30,25 +55,3 @@ Copy the `FieldJournal` folder into the beta client's `Interface/AddOns` folder.
 ## Later art
 
 An illustrated map inside the journal can use the saved map coordinates to draw loose circles near recorded encounters and resources. This build records coordinates but does not draw the map yet.
-
-## Local saves and recovery
-
-WoW writes `FieldJournalDB` to the account's `WTF/Account/<account>/SavedVariables/FieldJournal.lua` on `/reload` and logout. Version 0.7.1 initializes the saved character record at login, world entry, and when the journal opens. It also reconciles the bestiary from the saved encounter list without erasing recorded loot. `/fj status` prints the current character key, saved encounter count, and bestiary species count. If the bestiary list appears empty, use `/fj repair` to rebuild its index from the encounter history, then inspect the Bestiary tab. A separate backup of Rimurai's current SavedVariables was made before this update. Do not replace the live SavedVariables file while the game is running.
-
-## 0.7.2 persistence repair
-
-This build adds `FieldJournalCharacterDB` as a character-scoped SavedVariables backup alongside the account-level `FieldJournalDB`. At startup it merges available saved entries, encounters, loot and crafting records by stable keys, so repeated reloads do not create duplicates. The installed `QuestTextPack.lua` on Rimurai's computer also includes a one-time local recovery snapshot from the richer account save observed at 12:19 on 19 September 2026. The downloadable generic addon package does not contain this personal snapshot. The recovery overlay is available separately and should be kept private. `/fj status` now reports encounter, bestiary and crafting counts plus whether that recovery overlay loaded.
-
-Two beta game processes were running during investigation. If both play sessions remain active, a stale process can overwrite the account SavedVariables file on reload or exit. The character-scoped backup protects this addon from an older process that does not know about the new backup, but simultaneous writes from two updated clients can still conflict. Close the unused client when convenient, after ensuring the active character is safely logged out.
-
-## 0.7.3 recovery update
-
-A second, different live client snapshot contained another mining node and crafted items. The local recovery overlay now includes both snapshots. Startup merges encounter records by creature GUID and activity records by their event identity. The two snapshots contain 14 distinct encounter GUIDs. The generic zip remains free of Rimurai's personal records; the installed overlay is local to this computer.
-
-## 0.7.4 recovery update
-
-The earliest saved backup adds five more unique encounters. The installed local overlay now merges three snapshots with 19 distinct creature GUIDs in total. The generic package remains free of those personal snapshots.
-
-## 0.8.0 daily pages
-
-The left page selects dates with recorded activity. The right page groups that day's raw records into sections. Repeated loot from the same world object appears as one gathering activity with item totals; crafts at the same place within a short session appear as one batch; and consecutive sales or purchases with the same vendor appear as one visit with combined item and money totals. Underlying saved events remain separate so detail is not discarded. The Bestiary list now shows each encounter count once. Vendor names are captured from bag item links when available, which improves future diary entries; older unknown items may still appear by item ID. This build also includes all three local recovery snapshots for Rimurai's installation.
