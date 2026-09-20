@@ -13,6 +13,7 @@ Libs/LibDeflate/LibDeflate.lua
 QuestTextPack.lua
 Core/Bootstrap.lua
 Data/QuestLog.lua
+Data/Diary.lua
 UI/Widgets.lua
 UI/NoteEditor.lua
 UI/Window.lua

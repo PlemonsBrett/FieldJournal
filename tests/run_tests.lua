@@ -16,6 +16,7 @@ local specs = {
     "tests/fj_load_spec.lua",
     "tests/fj_merge_spec.lua",
     "tests/fj_questlog_spec.lua",
+    "tests/fj_diary_spec.lua",
 }
 
 local passed, failed = 0, 0

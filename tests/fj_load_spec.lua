@@ -5,6 +5,7 @@ local env = dofile("tests/wow_env.lua")
 local MODULES = {
     "Core/Bootstrap.lua",
     "Data/QuestLog.lua",
+    "Data/Diary.lua",
     "UI/Widgets.lua",
     "UI/NoteEditor.lua",
     "UI/Window.lua",
@@ -40,6 +41,12 @@ local function test_all_modules_load_into_one_namespace()
          "importCompletedQuests", "questSpeaker", "linkRecentConversation", "captureQuest",
          "activeQuests", "syncActiveQuestLog", "buildQuestViews", "beginNote", "closeNote",
          "questAccepted", "captureGossip"})
+    assertFunctions(fj.Diary, "FieldJournal.Diary",
+        {"addLifeEvent", "spellName", "learnedSpell", "currentGroup", "updateGroup",
+         "resetGroupSnapshot", "bagSnapshot", "checkMerchant", "trainerShown", "trainerClosed",
+         "merchantShown", "merchantBagUpdate", "merchantClosed", "readableItemName",
+         "addBatchItem", "merchantItems", "groupLifeEvents", "itemSummary", "batchSection",
+         "batchDescription", "buildLifeViews"})
 end
 
 local function test_refresh_if_shown_is_safe_without_a_window()
