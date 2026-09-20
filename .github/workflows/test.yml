@@ -1,0 +1,45 @@
+# Runs the Lua 5.1 suite on every push and pull request, and dry-runs the
+# BigWigs packager so a packaging mistake fails CI before a draft is published.
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lua-tests:
+    name: Lua 5.1 tests
+    if: "${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: prepare release') }}"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1
+
+      - name: Run test suite
+        run: lua5.1 tests/run_tests.lua
+
+  package:
+    name: Package dry-run
+    if: "${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: prepare release') }}"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build zip without uploading
+        uses: BigWigsMods/packager@v2
+        with:
+          args: -d -g forever

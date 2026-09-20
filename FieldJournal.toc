@@ -5,6 +5,7 @@
 ## Version: 0.8.0-beta
 ## SavedVariables: FieldJournalDB
 ## SavedVariablesPerCharacter: FieldJournalCharacterDB
+## X-Wago-ID: bGoyor60
 ## OptionalDeps: LibsAddonTools
 
 Libs/LibStub/LibStub.lua

@@ -18,8 +18,13 @@ New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
 
 # Runtime files only: everything the .toc loads, plus assets it references
 # and top-level docs. Excludes tests/, tools/, docs/, .claude/, .vscode/, .git/.
+# `art` is optional until illustrated assets land; skip it if the folder is absent.
 $runtimeDirs = @("Core", "Data", "UI", "Libs", "assets", "art")
 foreach ($dir in $runtimeDirs) {
+    if (-not (Test-Path $dir)) {
+        Write-Output "Skipping missing optional directory: $dir"
+        continue
+    }
     Copy-Item -Path $dir -Destination (Join-Path $stageDir $dir) -Recurse
 }
 $runtimeFiles = @("FieldJournal.toc", "LICENSE", "README.md", "CHANGELOG.md")

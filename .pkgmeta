@@ -1,0 +1,13 @@
+# BigWigs packager config. Used by .github/workflows/release.yml to build the
+# same runtime zip locally produced by tools/package.ps1, then upload it.
+# https://github.com/BigWigsMods/packager
+package-as: FieldJournal
+enable-nolib-creation: no
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+ignore:
+  - tests
+  - tools
+  - .github
+  - .worktrees

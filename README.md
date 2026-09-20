@@ -39,6 +39,18 @@ Copy the `FieldJournal` folder into the beta client's `Interface/AddOns` folder.
 
 **WoW Forever Beta SavedVariables bug:** this client has a known bug where addon SavedVariables are written to disk correctly but fail to load back in on `/reload` or a cold client start ([tracked upstream](https://github.com/ClassicWoWCommunity/forever-bugs/issues/34)). Left unaddressed, this can look like Field Journal losing your journal — in practice the data is silently going unread each session and then getting overwritten with whatever partial state the client actually loaded, which *does* destroy real data over repeated reloads. Install [ForeverSVFix](https://github.com/nobewayo/ForeverSVFix) to work around it (it loads the SavedVariables file through the addon's normal file loader, which still works, instead of the client's broken special-case loader). After installing or updating Field Journal, re-run ForeverSVFix's "Repair after addon updates" step, and if you edit `FieldJournal.toc` by hand, keep its injected `## X-ForeverSVFix:` header line and the two loader lines it adds at the top of the file list.
 
+## Continuous integration and Wago releases
+
+GitHub Actions runs the Lua 5.1 suite (`tests/run_tests.lua`) on every pull request and push to `main`, and dry-runs the [BigWigs packager](https://github.com/BigWigsMods/packager) so a bad zip fails before anyone publishes it.
+
+Merging to `main` prepares a **draft** GitHub Release. It does not upload to Wago.io yet:
+
+1. Tests must pass.
+2. The pipeline chooses the next version (keeps `FieldJournal.toc` on the first release; uses a TOC bump if you already changed it; otherwise increments the patch and keeps any `-beta` / `-alpha` suffix).
+3. It prepends that version to `CHANGELOG.md` using GitHub's generated notes for the commits since the last `v*` tag, commits `chore: prepare release <version>` to `main`, and opens a draft release with the packaged zip attached.
+
+Publishing that draft (GitHub → Releases → Edit draft → Publish) is what uploads the Forever zip (`Interface: 16001` → Wago patch `1.60.1`) to Wago project `bGoyor60`. The publish job fails if repository secret `WAGO_API_KEY` is missing. Local zips can still be built with `tools/package.ps1`.
+
 ## Quick validation
 
 1. `/reload`, open `/fj`, and confirm all four tabs open without an error.
