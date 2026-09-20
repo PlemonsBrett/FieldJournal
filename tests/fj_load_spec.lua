@@ -30,9 +30,12 @@ local function test_all_modules_load_into_one_namespace()
     end
     assertFunctions(fj, "FieldJournal",
         {"clean", "accessible", "characterKey", "currentZone", "currentPlace",
-         "currentMapPosition", "creatureIDFromGUID", "itemName", "moneyText",
-         "mergeList", "mergeCharacterCollections", "mergeAccountRecovery"})
-    assertFunctions(fj, "FieldJournal", {"savedCharacterKey", "initializeCharacter"})
+         "currentMapPosition", "creatureIDFromGUID", "itemName", "moneyText"})
+    assertFunctions(fj, "FieldJournal", {"initializeCharacter"})
+    assert(fj.savedCharacterKey == nil, "savedCharacterKey moved to Migrations.legacyCharacterKey")
+    assert(fj.mergeList == nil, "mergeList moved to FieldJournal.Migrations")
+    assert(fj.mergeCharacterCollections == nil, "mergeCharacterCollections moved to Migrations.mergeIntoCharacter")
+    assert(fj.mergeAccountRecovery == nil, "mergeAccountRecovery moved to Migrations.accountSlice")
     assertFunctions(fj.UI, "FieldJournal.UI", {"Refresh", "RefreshIfShown"})
     assertFunctions(fj.UI, "FieldJournal.UI", {"makeLabel", "coloredRectangle", "makeButton"})
     assertFunctions(fj.UI, "FieldJournal.UI",

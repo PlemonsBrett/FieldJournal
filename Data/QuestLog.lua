@@ -23,7 +23,7 @@ local function recoveredBody(questID)
 end
 
 local function addEntry(kind, id, stage, title, body, speaker, linkedQuestID)
-    local db, entries = FieldJournal.db, FieldJournal.entries
+    local db, entries = FieldJournal.charData, FieldJournal.entries
     body = clean(body)
     if body == "" or not entries then return end
     title = clean(title)
@@ -127,7 +127,7 @@ local function updateNoteBody(entry)
 end
 
 local function captureNotePage()
-    local db, entries = FieldJournal.db, FieldJournal.entries
+    local db, entries = FieldJournal.charData, FieldJournal.entries
     if not entries or not ItemTextGetText then return end
     local body = clean(ItemTextGetText())
     if body == "" then return end
@@ -211,7 +211,7 @@ local function isPlaceholder(entry)
 end
 
 local function importCompletedQuests(silent)
-    local db, entries = FieldJournal.db, FieldJournal.entries
+    local db, entries = FieldJournal.charData, FieldJournal.entries
     if not entries or not C_QuestLog or not C_QuestLog.GetAllCompletedQuestIDs then
         if not silent then print("Field Journal: completed quest history is unavailable in this client.") end
         return

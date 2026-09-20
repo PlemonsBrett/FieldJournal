@@ -18,7 +18,7 @@ local groupSnapshot
 local recentTraining = {}
 
 local function addLifeEvent(collection, kind, title, body, extra)
-    local db = FieldJournal.db
+    local db = FieldJournal.charData
     if not collection or not db then return end
     db.nextOrder = db.nextOrder + 1
     local event = {

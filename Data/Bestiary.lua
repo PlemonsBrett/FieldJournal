@@ -59,7 +59,7 @@ local function observedName(guid)
 end
 
 local function recordEncounter(guid, name, source)
-    local db, encounters, bestiary = FieldJournal.db, FieldJournal.encounters, FieldJournal.bestiary
+    local db, encounters, bestiary = FieldJournal.charData, FieldJournal.encounters, FieldJournal.bestiary
     if not encounters or not guid or recentDeaths[guid] then return end
     name = clean(name)
     if name == "" then return end
@@ -124,7 +124,7 @@ local function captureLootSlots()
 end
 
 local function commitLootSlot(slot)
-    local db, bestiary = FieldJournal.db, FieldJournal.bestiary
+    local db, bestiary = FieldJournal.charData, FieldJournal.bestiary
     local loot = lootSlots[slot]
     lootSlots[slot] = nil
     if not loot then return end
