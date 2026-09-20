@@ -322,6 +322,149 @@ local function test_capture_falls_back_to_the_first_readable_snapshot_when_the_n
         "the warning must point the player at /fj repair, got:\n" .. table.concat(lines, "\n"))
 end
 
+local function test_repair_restores_a_collection_lost_since_the_snapshot()
+    local fj = load()
+    local charData = freshChar()
+    charData.entries["quest:1"] = {key = "quest:1", kind = "quest", questID = 1, body = "one", order = 1}
+    charData.encounters[1] = {guid = "g1", name = "Wolf", seenAt = 5, order = 2}
+    charData.bestiary["creature:1"] = {key = "creature:1", name = "Wolf", kills = 3,
+        places = {Glade = {count = 2}}, drops = {}, order = 3}
+    fj.Backup.capture(charData)
+
+    -- The saved file came back with two collections emptied.
+    charData.encounters = {}
+    charData.bestiary = {}
+
+    local lines, release = capturePrint()
+    local restored, reason = fj.Backup.repair(charData)
+    release()
+
+    assert(restored == true, "repair must report that it restored something")
+    assert(reason == "restored", "expected reason 'restored', got " .. tostring(reason))
+    assert(#charData.encounters == 1, "the lost encounter must come back")
+    assert(charData.bestiary["creature:1"].kills == 3, "the lost bestiary record must come back")
+    assert(charData.entries["quest:1"].body == "one", "surviving entries must be untouched")
+    local joined = table.concat(lines, "\n")
+    assert(joined:find("1 encounters", 1, true), "the report must name what it restored:\n" .. joined)
+    assert(joined:find("1 bestiary species", 1, true), "the report must name what it restored:\n" .. joined)
+end
+
+local function test_repair_is_idempotent()
+    local fj = load()
+    local charData = freshChar()
+    charData.encounters[1] = {guid = "g1", name = "Wolf", seenAt = 5, order = 1}
+    charData.diaryEvents[1] = {key = "diary:1", seenAt = 7, order = 7}
+    charData.craftEvents[1] = {key = "craft:1", seenAt = 8, order = 8}
+    fj.Backup.capture(charData)
+    charData.encounters = {}
+
+    quietly(fj.Backup.repair, charData)
+    quietly(fj.Backup.repair, charData)
+    quietly(fj.Backup.repair, charData)
+
+    assert(#charData.encounters == 1,
+        "repeated repairs must not duplicate encounters, got " .. #charData.encounters)
+    assert(#charData.diaryEvents == 1,
+        "repeated repairs must not duplicate diary events, got " .. #charData.diaryEvents)
+    assert(#charData.craftEvents == 1,
+        "repeated repairs must not duplicate craft events, got " .. #charData.craftEvents)
+end
+
+local function test_repair_reports_no_repair_needed_when_nothing_is_missing()
+    local fj = load()
+    local charData = freshChar()
+    charData.encounters[1] = {guid = "g1", name = "Wolf", seenAt = 5, order = 1}
+    fj.Backup.capture(charData)
+
+    local lines, release = capturePrint()
+    local restored, reason = fj.Backup.repair(charData)
+    release()
+
+    assert(restored == false, "repair must report that nothing needed restoring")
+    assert(reason == "nothing", "expected reason 'nothing', got " .. tostring(reason))
+    assert(table.concat(lines, "\n"):find("no repair needed", 1, true),
+        "expected the no-repair-needed line, got:\n" .. table.concat(lines, "\n"))
+    assert(#charData.encounters == 1, "repair must not change a healthy journal")
+end
+
+-- Migrations.mergeIntoCharacter inserts source record tables by reference. If
+-- the snapshot were merged directly, a restored record and the backup's own
+-- record would be the same Lua table forever after.
+local function test_repair_does_not_alias_live_records_to_the_snapshot()
+    local fj = load()
+    local charData = freshChar()
+    charData.encounters[1] = {guid = "g1", name = "Wolf", seenAt = 5, order = 1}
+    fj.Backup.capture(charData)
+    charData.encounters = {}
+
+    quietly(fj.Backup.repair, charData)
+
+    local live = charData.encounters[1]
+    local stored = charData.backups[1].data.encounters[1]
+    assert(live ~= nil and stored ~= nil, "the encounter must exist on both sides")
+    assert(live.guid == stored.guid, "the same encounter must have been restored")
+    assert(live ~= stored, "a restored record must be a copy, never the snapshot's own table")
+    live.name = "edited later"
+    assert(stored.name == "Wolf", "editing a restored record must never rewrite the backup")
+end
+
+local function test_repair_drops_placeholders_the_player_has_already_replaced()
+    local fj = load()
+    local charData = freshChar()
+    charData.entries["past:101"] = {key = "past:101", kind = "pastQuest", questID = 101,
+        body = "This quest was completed before Field Journal was installed."}
+    charData.encounters[1] = {guid = "g1", name = "Wolf", seenAt = 5, order = 1}
+    fj.Backup.capture(charData)
+
+    -- The player captures the real quest text, which deletes the placeholder
+    -- exactly as Data/QuestLog.lua's addEntry does, and then loses encounters.
+    charData.entries["past:101"] = nil
+    charData.entries["quest:101"] = {key = "quest:101", kind = "quest", questID = 101,
+        body = "the words I actually heard", order = 9}
+    charData.encounters = {}
+
+    quietly(fj.Backup.repair, charData)
+
+    assert(charData.entries["quest:101"] ~= nil, "the real quest entry must survive the repair")
+    assert(charData.entries["past:101"] == nil,
+        "a placeholder the player has already replaced must not be resurrected by a restore")
+    assert(#charData.encounters == 1, "the genuinely lost encounter must still be restored")
+end
+
+local function test_repair_raises_next_order_above_every_restored_record()
+    local fj = load()
+    local charData = freshChar()
+    charData.nextOrder = 40
+    charData.encounters[1] = {guid = "g1", name = "Wolf", seenAt = 5, order = 40}
+    fj.Backup.capture(charData)
+
+    charData.encounters = {}
+    charData.nextOrder = 0
+
+    quietly(fj.Backup.repair, charData)
+    assert(charData.nextOrder == 40,
+        "nextOrder must rise above every restored record so new ones cannot collide, got "
+            .. tostring(charData.nextOrder))
+end
+
+local function test_repair_is_safe_with_an_empty_ring_and_a_missing_database()
+    local fj = load()
+
+    local lines, release = capturePrint()
+    local restored, reason = fj.Backup.repair(freshChar())
+    release()
+    assert(restored == false, "repair must refuse when the ring is empty")
+    assert(reason == "empty", "expected reason 'empty', got " .. tostring(reason))
+    assert(#lines == 1, "exactly one chat line must explain an empty ring, got " .. #lines)
+
+    lines, release = capturePrint()
+    local ok, why = fj.Backup.repair(nil)
+    release()
+    assert(ok == false, "repair must refuse when there is no character data")
+    assert(why == "unavailable", "expected reason 'unavailable', got " .. tostring(why))
+    assert(#lines == 1, "exactly one chat line must explain a missing database, got " .. #lines)
+end
+
 return {
     test_snapshot_data_is_a_deep_copy_without_the_backups_field = test_snapshot_data_is_a_deep_copy_without_the_backups_field,
     test_first_capture_prepends_a_snapshot_with_time_counts_and_data = test_first_capture_prepends_a_snapshot_with_time_counts_and_data,
@@ -332,6 +475,13 @@ return {
     test_capture_refuses_when_the_journal_is_empty_but_the_ring_is_not = test_capture_refuses_when_the_journal_is_empty_but_the_ring_is_not,
     test_capture_tolerates_a_superseded_placeholder_entry_disappearing = test_capture_tolerates_a_superseded_placeholder_entry_disappearing,
     test_capture_is_safe_without_a_database = test_capture_is_safe_without_a_database,
+    test_repair_restores_a_collection_lost_since_the_snapshot = test_repair_restores_a_collection_lost_since_the_snapshot,
+    test_repair_is_idempotent = test_repair_is_idempotent,
+    test_repair_reports_no_repair_needed_when_nothing_is_missing = test_repair_reports_no_repair_needed_when_nothing_is_missing,
+    test_repair_does_not_alias_live_records_to_the_snapshot = test_repair_does_not_alias_live_records_to_the_snapshot,
+    test_repair_drops_placeholders_the_player_has_already_replaced = test_repair_drops_placeholders_the_player_has_already_replaced,
+    test_repair_raises_next_order_above_every_restored_record = test_repair_raises_next_order_above_every_restored_record,
+    test_repair_is_safe_with_an_empty_ring_and_a_missing_database = test_repair_is_safe_with_an_empty_ring_and_a_missing_database,
     test_capture_refuses_when_entries_alone_is_wiped_to_zero = test_capture_refuses_when_entries_alone_is_wiped_to_zero,
     test_capture_is_safe_when_a_live_collection_field_is_malformed = test_capture_is_safe_when_a_live_collection_field_is_malformed,
     test_describe_is_safe_when_a_snapshot_is_malformed = test_describe_is_safe_when_a_snapshot_is_malformed,

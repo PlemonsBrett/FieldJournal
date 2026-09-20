@@ -274,6 +274,116 @@ local function computeDescription(charData, h)
     return lines
 end
 
+--- Re-applies Data/QuestLog.lua addEntry's own rule:
+---     if kind == "quest" and id then entries["past:" .. id] = nil end
+--  When the player captures a real quest's text, the recovered-description
+--  placeholder for that quest is deleted. A snapshot taken before that capture
+--  still holds the placeholder, and Migrations.mergeIntoCharacter fills in any
+--  entry key the target is missing -- so without this pass a restore resurrects
+--  every placeholder the player has already replaced, and the Quests tab shows
+--  the same quest twice. Returns how many were dropped.
+function Backup.dropSupersededPlaceholders(charData)
+    if type(charData) ~= "table" or type(charData.entries) ~= "table" then return 0 end
+
+    -- Collect first, delete second: never remove keys while iterating pairs().
+    local superseded = {}
+    for _, entry in pairs(charData.entries) do
+        if type(entry) == "table" and entry.kind == "quest" and entry.questID then
+            superseded["past:" .. tostring(entry.questID)] = true
+        end
+    end
+
+    local dropped = 0
+    for key in pairs(superseded) do
+        if charData.entries[key] ~= nil then
+            charData.entries[key] = nil
+            dropped = dropped + 1
+        end
+    end
+    return dropped
+end
+
+local function performRepair(charData, h)
+    local ring = charData.backups
+    local before = h.counts(charData)
+    local merged, highestNextOrder = 0, 0
+
+    -- Newest snapshot first: where two snapshots both hold a record the live
+    -- data lost, mergeEntries keeps whichever arrived first, so the most recent
+    -- version wins and older snapshots only fill in what the newer ones lack.
+    -- The merge always gets a DEEP COPY. Migrations.mergeIntoCharacter inserts
+    -- source record tables by reference, so merging snapshot.data itself would
+    -- make live records and ring records the same Lua tables forever after --
+    -- a later edit to a restored record would silently rewrite the backup.
+    for index = 1, #ring do
+        local snapshot = ring[index]
+        if type(snapshot) == "table" and type(snapshot.data) == "table" then
+            h.mergeIntoCharacter(charData, h.deepCopy(snapshot.data), "backup snapshot " .. index)
+            if type(snapshot.data.nextOrder) == "number" and snapshot.data.nextOrder > highestNextOrder then
+                highestNextOrder = snapshot.data.nextOrder
+            end
+            merged = merged + 1
+        end
+    end
+
+    local dropped = Backup.dropSupersededPlaceholders(charData)
+    charData.nextOrder = math.max(charData.nextOrder or 0, highestNextOrder, h.highestOrder(charData))
+    return before, h.counts(charData), merged, dropped
+end
+
+--- Merges every snapshot in the ring back into the live journal and reports
+--  what that recovered. Returns restored, reason -- one of "unavailable",
+--  "empty", "error", "nothing", "restored". Never throws.
+--
+--  Every snapshot is merged rather than only those with a strictly higher
+--  record count: counts are not content, so a backup with fewer total records
+--  can still be the only surviving copy of something. The merge is
+--  non-destructive by construction (an existing entry is never overwritten,
+--  bestiary fields take the max of both sides, lists de-duplicate by identity)
+--  and idempotent, so running it when it was not needed changes nothing. The
+--  count comparison is kept -- as the report.
+function Backup.repair(charData)
+    local h = helpers()
+    if not h or type(charData) ~= "table" then
+        print("Field Journal: the database is not available, so there is nothing to repair.")
+        return false, "unavailable"
+    end
+    if type(charData.backups) ~= "table" or #charData.backups == 0 then
+        print("Field Journal: no backup snapshots have been taken yet, so there is nothing to restore from.")
+        return false, "empty"
+    end
+
+    local results = {pcall(performRepair, charData, h)}
+    if not results[1] then
+        FieldJournal.backupError = tostring(results[2])
+        print("Field Journal: the backup restore failed (" .. tostring(results[2])
+            .. "). Nothing else was changed. Run /fj status and report this.")
+        return false, "error"
+    end
+    local before, after, merged, dropped = results[2], results[3], results[4], results[5]
+
+    local restored = {}
+    for _, counted in ipairs(COUNTED) do
+        local gained = after[counted.field] - before[counted.field]
+        if gained > 0 then restored[#restored + 1] = gained .. " " .. counted.label end
+    end
+
+    if #restored == 0 and dropped == 0 then
+        print("Field Journal: checked " .. merged .. " backup snapshot(s); no repair needed.")
+        return false, "nothing"
+    end
+
+    if #restored > 0 then
+        print("Field Journal: restored " .. table.concat(restored, ", ")
+            .. " from " .. merged .. " backup snapshot(s).")
+    end
+    if dropped > 0 then
+        print("Field Journal: dropped " .. dropped
+            .. " earlier-quest placeholder(s) you have since replaced with your own record.")
+    end
+    return true, "restored"
+end
+
 --- Chat-ready lines describing the ring, newest first. Returned as a table
 --  rather than printed so /fj backup, /fj status and the test suite can all
 --  read the same description without capturing print. Never throws: a
