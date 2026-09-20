@@ -30,6 +30,7 @@ local function test_all_modules_load_into_one_namespace()
         {"clean", "accessible", "characterKey", "currentZone", "currentPlace",
          "currentMapPosition", "creatureIDFromGUID", "itemName", "moneyText",
          "mergeList", "mergeCharacterCollections", "mergeAccountRecovery"})
+    assertFunctions(fj, "FieldJournal", {"savedCharacterKey", "initializeCharacter"})
     assertFunctions(fj.UI, "FieldJournal.UI", {"Refresh", "RefreshIfShown"})
     assertFunctions(fj.UI, "FieldJournal.UI", {"makeLabel", "coloredRectangle", "makeButton"})
     assertFunctions(fj.UI, "FieldJournal.UI",
