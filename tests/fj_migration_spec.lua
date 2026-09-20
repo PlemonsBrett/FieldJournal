@@ -159,7 +159,36 @@ local function test_survives_malformed_legacy_data()
     assert(charData.legacyMigrated == true, "a malformed source must not block the guard")
     assert(type(charData.entries) == "table", "the affected collection must be left empty, not nil")
     assert(#charData.diaryEvents == 1, "a readable collection must still migrate")
-    assert(#lines > 0, "a malformed source must say something in chat")
+    local joined = table.concat(lines, "\n")
+    assert(joined:find("malformed legacy.*entries"),
+        "expected a specific malformed-entries warning, got:\n" .. joined)
+end
+
+local function test_distinguishes_reused_guids_from_true_cross_source_duplicates()
+    local fj = load()
+    local charData = freshChar()
+    local account = legacyAccount()
+    -- A creature respawns at the same spawn point: two genuinely distinct
+    -- historical encounters that happen to share a guid, weeks apart.
+    account.encounters[KEY] = {
+        {guid = "g1", name = "Wolf", seenAt = 5},
+        {guid = "g1", name = "Wolf", seenAt = 9000},
+    }
+
+    quietly(fj.Migrations.run, charData, {
+        account = account,
+        -- A recovery snapshot re-reporting the exact same first encounter
+        -- (same guid AND same seenAt) must still collapse as one record.
+        recovery = {{name = "FieldJournalRecoveryDB2", data = {
+            characters = {}, nextOrder = 0,
+            encounters = {[KEY] = {{guid = "g1", name = "Wolf", seenAt = 5}}},
+            diaryEvents = {}, craftEvents = {}, bestiary = {},
+            objectiveStates = {}, questBookmarks = {},
+        }}},
+    })
+
+    assert(#charData.encounters == 2,
+        "two distinct encounters at a reused guid must both survive, got " .. #charData.encounters)
 end
 
 local function test_logs_counts_before_and_after()
@@ -193,6 +222,7 @@ return {
     test_merges_the_per_character_mirror_and_recovery_snapshots = test_merges_the_per_character_mirror_and_recovery_snapshots,
     test_seeds_next_order_above_every_migrated_record = test_seeds_next_order_above_every_migrated_record,
     test_survives_malformed_legacy_data = test_survives_malformed_legacy_data,
+    test_distinguishes_reused_guids_from_true_cross_source_duplicates = test_distinguishes_reused_guids_from_true_cross_source_duplicates,
     test_logs_counts_before_and_after = test_logs_counts_before_and_after,
     test_legacy_character_key_resolves_a_stale_realm_prefix = test_legacy_character_key_resolves_a_stale_realm_prefix,
 }

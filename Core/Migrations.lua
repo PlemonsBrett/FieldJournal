@@ -65,7 +65,17 @@ local function eventIdentity(item)
         tostring(item.sourceGUID), tostring(item.itemID)}, "\031")
 end
 
-local function byGUID(item) return item.guid end
+-- guid alone is not a stable identity across migration sources: WoW creature
+-- GUIDs get reused after a creature respawns at the same spawn point over
+-- long timescales, and the addon's own in-session duplicate guard
+-- (recentDeaths in Data/Bestiary.lua) is memory-only and never persisted. Two
+-- genuinely distinct historical encounters (weeks apart, at a respawned
+-- creature) can legitimately share a guid, so seenAt must be part of the
+-- identity too -- this mirrors eventIdentity's reasoning above.
+local function encounterIdentity(item)
+    if item.guid == nil then return nil end
+    return tostring(item.guid) .. "\031" .. tostring(item.seenAt)
+end
 
 local function mergeEntries(target, source)
     target.entries = target.entries or {}
@@ -77,7 +87,7 @@ end
 
 local function mergeEncounters(target, source)
     target.encounters = target.encounters or {}
-    mergeList(target.encounters, source, byGUID)
+    mergeList(target.encounters, source, encounterIdentity)
 end
 
 local function mergeDiaryEvents(target, source)
@@ -137,6 +147,17 @@ local function mergeMap(target, field, source)
     end
 end
 
+-- A whole top-level source field (e.g. source.entries) being present but not
+-- a table means that entire legacy collection is unreadable -- distinct from
+-- an otherwise-valid collection containing one malformed record, which stays
+-- silent (that would be noisier and is not what this warning covers).
+local function warnIfMalformed(label, fieldName, value)
+    if value ~= nil and type(value) ~= "table" then
+        print("Field Journal: skipped malformed legacy " .. label .. " " .. fieldName
+            .. " (expected a table, got " .. type(value) .. ").")
+    end
+end
+
 --- Merges one flat source table into one flat per-character table.
 --  Each collection is merged behind its own pcall, so one unreadable
 --  collection cannot stop the other six.
@@ -147,6 +168,13 @@ end
 local function mergeIntoCharacter(target, source, label)
     if type(target) ~= "table" or type(source) ~= "table" then return end
     label = tostring(label or "saved data")
+    warnIfMalformed(label, "entries", source.entries)
+    warnIfMalformed(label, "encounters", source.encounters)
+    warnIfMalformed(label, "diary events", source.diaryEvents)
+    warnIfMalformed(label, "craft events", source.craftEvents)
+    warnIfMalformed(label, "bestiary", source.bestiary)
+    warnIfMalformed(label, "objective state", source.objectiveState)
+    warnIfMalformed(label, "quest bookmarks", source.questBookmarks)
     protect(label .. " entries", mergeEntries, target, source.entries)
     protect(label .. " encounters", mergeEncounters, target, source.encounters)
     protect(label .. " diary events", mergeDiaryEvents, target, source.diaryEvents)
