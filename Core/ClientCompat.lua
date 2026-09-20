@@ -12,8 +12,8 @@
 -- raised "attempt to concatenate local 'regionKey' (a nil value)" and killed
 -- addon loading for the entire client. Plan 1 forbids editing vendored files,
 -- so we make the globals safe for the duration of the Libs/ block instead, and
--- Core/Database.lua -- the first file that loads after Libs/ -- calls restore()
--- to hand the client its own functions back untouched.
+-- Core/Database.lua -- which loads early in the Core/ block before any Data/ or
+-- UI/ file -- calls restore() to hand the client its own functions back untouched.
 
 local FieldJournal = select(2, ...)
 

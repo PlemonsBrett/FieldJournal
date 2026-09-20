@@ -1,9 +1,11 @@
 -- Field Journal: AceDB-3.0 setup, schema version and per-character defaults.
 --
--- This is the first file that loads after the Libs/ block, so it is the first
--- place that can undo Core/ClientCompat.lua's temporary global wrappers.
--- Do that before anything else: AceDB-3.0 captured everything it needed while
--- its own file was loading, so nothing below depends on the wrappers staying.
+-- Loads early in the Core/ block, immediately after the files that must run
+-- first (Bootstrap's frame/event setup has no dependency on this file), before
+-- any Data/ or UI/ file. This is the first place that can undo Core/ClientCompat.lua's
+-- temporary global wrappers. Do that before anything else: AceDB-3.0 captured
+-- everything it needed while its own file was loading, so nothing below depends
+-- on the wrappers staying.
 
 local FieldJournal = select(2, ...)
 
@@ -61,20 +63,29 @@ Database.defaults = {
     },
 }
 
+-- Deep-copy helper for plain data tables (no metatables, functions, or cycles).
+local function deepCopy(src)
+    if type(src) ~= "table" then return src end
+    local dst = {}
+    for k, v in pairs(src) do
+        dst[k] = deepCopy(v)
+    end
+    return dst
+end
+
 -- Grab references to every pre-AceDB global before AceDB:New touches the
--- SavedVariables table. AceDB only ever adds keys to that table -- it reuses
--- the same table object and its logout handler only prunes the sections it
--- knows about -- so the legacy keys would survive anyway. Capturing first is
--- belt and braces: the migration reads from these references, never from the
--- global, so it cannot be affected by anything AceDB does afterwards.
+-- SavedVariables table. AceDB reuses the same table object and its logout
+-- handler only prunes the sections it knows about, so deep-copy here to ensure
+-- the migration reads from a snapshot that cannot be affected by anything AceDB
+-- does afterwards.
 local function captureLegacy()
     local legacy = {recovery = {}}
-    if type(FieldJournalDB) == "table" then legacy.account = FieldJournalDB end
-    if type(FieldJournalCharacterDB) == "table" then legacy.character = FieldJournalCharacterDB end
+    if type(FieldJournalDB) == "table" then legacy.account = deepCopy(FieldJournalDB) end
+    if type(FieldJournalCharacterDB) == "table" then legacy.character = deepCopy(FieldJournalCharacterDB) end
     for _, name in ipairs({"FieldJournalRecoveryDB", "FieldJournalRecoveryDB2", "FieldJournalRecoveryDB3"}) do
         local snapshot = _G[name]
         if type(snapshot) == "table" then
-            legacy.recovery[#legacy.recovery + 1] = {name = name, data = snapshot}
+            legacy.recovery[#legacy.recovery + 1] = {name = name, data = deepCopy(snapshot)}
         end
     end
     return legacy
@@ -111,7 +122,11 @@ function Database.initialize()
     FieldJournal.db = result
 
     if FieldJournal.Migrations and FieldJournal.Migrations.run then
-        FieldJournal.Migrations.run(result.char, legacy)
+        local mOk, mErr = pcall(FieldJournal.Migrations.run, result.char, legacy)
+        if not mOk then
+            FieldJournal.migrationError = tostring(mErr)
+            print("Field Journal: the legacy migration failed unexpectedly (" .. tostring(mErr) .. ").")
+        end
     end
 
     return result
