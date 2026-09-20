@@ -431,6 +431,71 @@ local function test_repair_drops_placeholders_the_player_has_already_replaced()
     assert(#charData.encounters == 1, "the genuinely lost encounter must still be restored")
 end
 
+-- Fix round 1: a merge can reintroduce a past:<questID> placeholder that a
+-- ring snapshot still holds, even though the live data has already replaced
+-- it with a real quest entry -- Migrations.mergeIntoCharacter's entries merge
+-- is fill-only, so it fills back in a key the live copy is missing. Backup.
+-- dropSupersededPlaceholders then removes that placeholder again in the very
+-- same repair call, which must NOT be reported as a genuine drop: nothing
+-- about the live data actually changed end to end.
+local function test_repair_does_not_report_a_false_restore_from_merge_internal_placeholder_churn()
+    local fj = load()
+    local charData = freshChar()
+    charData.entries["past:101"] = {key = "past:101", kind = "pastQuest", questID = 101,
+        body = "This quest was completed before Field Journal was installed."}
+    charData.encounters[1] = {guid = "g1", name = "Wolf", seenAt = 5, order = 1}
+    fj.Backup.capture(charData)
+
+    -- The player has since captured the real quest text -- exactly as
+    -- Data/QuestLog.lua's addEntry does -- so the placeholder is NOT live
+    -- anymore. Nothing else about the journal changed since the snapshot.
+    charData.entries["past:101"] = nil
+    charData.entries["quest:101"] = {key = "quest:101", kind = "quest", questID = 101,
+        body = "the words I actually heard", order = 9}
+
+    local lines, release = capturePrint()
+    local restored, reason = fj.Backup.repair(charData)
+    release()
+
+    local joined = table.concat(lines, "\n")
+    assert(restored == false,
+        "a merge that only reintroduces then re-drops a placeholder must not be reported as a restore")
+    assert(reason == "nothing", "expected reason 'nothing', got " .. tostring(reason))
+    assert(joined:find("no repair needed", 1, true),
+        "expected the no-repair-needed line, got:\n" .. joined)
+    assert(not joined:find("dropped", 1, true),
+        "merge-internal placeholder churn must not be reported as a dropped placeholder, got:\n" .. joined)
+    assert(charData.entries["past:101"] == nil,
+        "the placeholder must still end up gone from live data -- only the report changed")
+    assert(charData.entries["quest:101"] ~= nil, "the real quest entry must survive the repair")
+end
+
+-- Regression guard for the fix above: a placeholder that really was sitting
+-- in live data before the repair call -- not one the merge itself just
+-- reintroduced -- must still be reported as a genuine drop.
+local function test_repair_still_reports_a_genuine_placeholder_drop()
+    local fj = load()
+    local charData = freshChar()
+    charData.entries["past:202"] = {key = "past:202", kind = "pastQuest", questID = 202,
+        body = "This quest was completed before Field Journal was installed."}
+    charData.entries["quest:202"] = {key = "quest:202", kind = "quest", questID = 202,
+        body = "the words I actually heard", order = 9}
+    charData.encounters[1] = {guid = "g1", name = "Wolf", seenAt = 5, order = 1}
+    fj.Backup.capture(charData)
+
+    local lines, release = capturePrint()
+    local restored, reason = fj.Backup.repair(charData)
+    release()
+
+    local joined = table.concat(lines, "\n")
+    assert(restored == true, "a genuine placeholder drop must still be reported as a repair")
+    assert(reason == "restored", "expected reason 'restored', got " .. tostring(reason))
+    assert(joined:find("dropped 1 earlier-quest placeholder", 1, true),
+        "expected the dropped-placeholder line, got:\n" .. joined)
+    assert(charData.entries["past:202"] == nil, "the superseded placeholder must be gone")
+    assert(charData.entries["quest:202"] ~= nil, "the real quest entry must survive the repair")
+end
+
 local function test_repair_raises_next_order_above_every_restored_record()
     local fj = load()
     local charData = freshChar()
@@ -480,6 +545,8 @@ return {
     test_repair_reports_no_repair_needed_when_nothing_is_missing = test_repair_reports_no_repair_needed_when_nothing_is_missing,
     test_repair_does_not_alias_live_records_to_the_snapshot = test_repair_does_not_alias_live_records_to_the_snapshot,
     test_repair_drops_placeholders_the_player_has_already_replaced = test_repair_drops_placeholders_the_player_has_already_replaced,
+    test_repair_does_not_report_a_false_restore_from_merge_internal_placeholder_churn = test_repair_does_not_report_a_false_restore_from_merge_internal_placeholder_churn,
+    test_repair_still_reports_a_genuine_placeholder_drop = test_repair_still_reports_a_genuine_placeholder_drop,
     test_repair_raises_next_order_above_every_restored_record = test_repair_raises_next_order_above_every_restored_record,
     test_repair_is_safe_with_an_empty_ring_and_a_missing_database = test_repair_is_safe_with_an_empty_ring_and_a_missing_database,
     test_capture_refuses_when_entries_alone_is_wiped_to_zero = test_capture_refuses_when_entries_alone_is_wiped_to_zero,

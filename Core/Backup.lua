@@ -308,6 +308,22 @@ local function performRepair(charData, h)
     local before = h.counts(charData)
     local merged, highestNextOrder = 0, 0
 
+    -- Snapshot which past:<questID> placeholders are already live BEFORE the
+    -- merge. A merge can reintroduce a placeholder a ring snapshot still holds
+    -- (mergeEntries fills any key the live copy is missing) even though the
+    -- player already replaced it with a real quest entry -- that placeholder
+    -- gets dropped again below in the same call, and that add-then-remove is
+    -- merge-internal churn, not a reportable repair action. Only a placeholder
+    -- that was ALREADY live before this call counts as a genuine drop.
+    local preExistingPast = {}
+    if type(charData.entries) == "table" then
+        for key in pairs(charData.entries) do
+            if type(key) == "string" and key:sub(1, 5) == "past:" then
+                preExistingPast[key] = true
+            end
+        end
+    end
+
     -- Newest snapshot first: where two snapshots both hold a record the live
     -- data lost, mergeEntries keeps whichever arrived first, so the most recent
     -- version wins and older snapshots only fill in what the newer ones lack.
@@ -326,7 +342,17 @@ local function performRepair(charData, h)
         end
     end
 
-    local dropped = Backup.dropSupersededPlaceholders(charData)
+    -- droppedTotal counts every placeholder removed this call, including ones
+    -- the merge itself just reintroduced -- it is intentionally not what gets
+    -- reported. Only placeholders present in preExistingPast (i.e. genuinely
+    -- live before this call) and now gone count toward the reported total.
+    local droppedTotal = Backup.dropSupersededPlaceholders(charData)
+    local dropped = 0
+    for key in pairs(preExistingPast) do
+        if charData.entries[key] == nil then
+            dropped = dropped + 1
+        end
+    end
     charData.nextOrder = math.max(charData.nextOrder or 0, highestNextOrder, h.highestOrder(charData))
     return before, h.counts(charData), merged, dropped
 end
