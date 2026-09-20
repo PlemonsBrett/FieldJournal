@@ -36,6 +36,9 @@ local resetGroupSnapshot = FieldJournal.Diary.resetGroupSnapshot
 local trainerClosed = FieldJournal.Diary.trainerClosed
 local trainerShown = FieldJournal.Diary.trainerShown
 local updateGroup = FieldJournal.Diary.updateGroup
+local craftedResult = FieldJournal.Crafting.craftedResult
+local recordSkillMessage = FieldJournal.Crafting.recordSkillMessage
+local tradeskillMessage = FieldJournal.Crafting.tradeskillMessage
 FieldJournal.frame = CreateFrame("Frame")
 FieldJournal.UI.zoneFilter = "All zones"
 FieldJournal.UI.searchText = ""
@@ -44,7 +47,6 @@ local recentDeaths = {}
 local observedUnits = {}
 local observedUnitCount = 0
 local lootSlots = {}
-local recentCrafts = {}
 local initializeCharacter
 
 local function savedCharacterKey()
@@ -198,9 +200,7 @@ local function commitLootSlot(slot)
             beast.order = db.nextOrder
         elseif guid:find("^GameObject%-") then
             sourceName = sourceName or "something in " .. currentPlace()
-            addLifeEvent(craftEvents, "gather", "Collected " .. loot.name,
-                "Near " .. currentPlace() .. ", I collected " .. loot.name .. ".",
-                {itemID = loot.itemID, count = source.count, sourceGUID = guid})
+            FieldJournal.Crafting.recordGather(loot, source.count, guid)
         end
     end
     local questID = tonumber(loot.questID) or findUniqueQuestMention(loot.name)
@@ -210,32 +210,6 @@ local function commitLootSlot(slot)
         addEntry("pickup", nil, "Found", loot.name, body, "", questID)
     end
     FieldJournal.UI.RefreshIfShown()
-end
-
-local function recordCraft(itemID, name, count)
-    local craftEvents = FieldJournal.craftEvents
-    name = itemName(itemID, name)
-    if name == "" then return end
-    local key = tostring(itemID or name)
-    if recentCrafts[key] and time() - recentCrafts[key] < 3 then return end
-    recentCrafts[key] = time()
-    addLifeEvent(craftEvents, "craft", "Crafted " .. name,
-        "At " .. currentPlace() .. ", I made " .. (count and count > 1 and (count .. " " .. name) or name) .. ".",
-        {itemID = itemID, count = count or 1})
-end
-
-local function recordSkillMessage(message)
-    local craftEvents = FieldJournal.craftEvents
-    if type(message) ~= "string" or not accessible(message) then return end
-    local skill, level = message:match("[Yy]our skill in (.-) has increased to (%d+)")
-    level = tonumber(level)
-    if not skill or not level then return end
-    local milestone = level == 20 or level == 25 or level == 35 or level == 40 or level == 50
-        or level == 75 or (level >= 100 and level % 25 == 0)
-    if milestone then
-        addLifeEvent(craftEvents, "milestone", skill .. " reached " .. level,
-            "At " .. currentPlace() .. ", my " .. skill .. " skill reached " .. level .. ".")
-    end
 end
 
 local function buildBestiaryViews()
@@ -575,13 +549,9 @@ FieldJournal.frame:SetScript("OnEvent", function(_, event, ...)
     elseif event == "CHAT_MSG_SKILL" then
         recordSkillMessage(name)
     elseif event == "CHAT_MSG_TRADESKILLS" then
-        if type(name) == "string" and accessible(name) then
-            local id, item = name:match("|Hitem:(%d+).-|h%[(.-)%]|h")
-            if id then recordCraft(tonumber(id), item, 1) end
-        end
+        tradeskillMessage(name)
     elseif event == "TRADE_SKILL_ITEM_CRAFTED_RESULT" then
-        local data = name
-        if type(data) == "table" then recordCraft(data.itemID, data.hyperlink, data.quantity or 1) end
+        craftedResult(name)
     elseif event == "GROUP_ROSTER_UPDATE" then
         updateGroup()
     elseif event == "MERCHANT_SHOW" then
