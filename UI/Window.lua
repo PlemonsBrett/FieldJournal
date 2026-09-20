@@ -383,17 +383,44 @@ function FieldJournal.UI.RefreshIfShown()
     if FieldJournal.UI.window and FieldJournal.UI.window:IsShown() then FieldJournal.UI.Refresh() end
 end
 
+-- Captures the window's current on-screen position into the account-wide
+-- profile (shared across characters that opt into the same AceDB profile).
+-- Nil-guarded: FieldJournal.db can be nil if the database failed to open.
+local function saveWindowPosition(window)
+    if not FieldJournal.db or not FieldJournal.db.profile then return end
+    local point, _, relativePoint, x, y = window:GetPoint()
+    if not point then return end
+    FieldJournal.db.profile.windowPoint = {point = point, relativePoint = relativePoint, x = x, y = y}
+end
+
+-- Restores a previously saved position, falling back to the original default
+-- (screen center) when there is nothing saved yet or the database is nil.
+local function restoreWindowPosition(window)
+    local saved = FieldJournal.db and FieldJournal.db.profile and FieldJournal.db.profile.windowPoint
+    if not saved then
+        window:SetPoint("CENTER")
+        return
+    end
+    window:SetPoint(saved.point, UIParent, saved.relativePoint, saved.x, saved.y)
+end
+
 local function createWindow()
     local window = CreateFrame("Frame", "FieldJournalWindow", UIParent)
     FieldJournal.UI.window = window
     window:SetSize(730, 530)
-    window:SetPoint("CENTER")
+    restoreWindowPosition(window)
+    if FieldJournal.db and FieldJournal.db.profile and FieldJournal.db.profile.lastTab then
+        currentTab = FieldJournal.db.profile.lastTab
+    end
     window:SetFrameStrata("DIALOG")
     window:SetMovable(true)
     window:EnableMouse(true)
     window:RegisterForDrag("LeftButton")
     window:SetScript("OnDragStart", window.StartMoving)
-    window:SetScript("OnDragStop", window.StopMovingOrSizing)
+    window:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        saveWindowPosition(self)
+    end)
     window:SetClampedToScreen(true)
     tinsert(UISpecialFrames, "FieldJournalWindow")
 
@@ -428,6 +455,7 @@ local function createWindow()
         button:SetPoint("TOPLEFT", 28 + (index - 1) * 168, -49)
         button:SetScript("OnClick", function()
             currentTab = tab[1]
+            if FieldJournal.db and FieldJournal.db.profile then FieldJournal.db.profile.lastTab = tab[1] end
             FieldJournal.UI.selectedKey = nil
             FieldJournal.UI.searchText = ""
             FieldJournal.UI.zoneFilter = "All zones"
@@ -594,4 +622,6 @@ FieldJournal.UI.rememberedPlace = rememberedPlace
 FieldJournal.UI.questStageStory = questStageStory
 FieldJournal.UI.marginStory = marginStory
 FieldJournal.UI.showDetail = showDetail
+FieldJournal.UI.saveWindowPosition = saveWindowPosition
+FieldJournal.UI.restoreWindowPosition = restoreWindowPosition
 FieldJournal.UI.createWindow = createWindow

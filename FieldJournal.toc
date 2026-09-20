@@ -6,6 +6,7 @@
 ## SavedVariables: FieldJournalDB
 ## SavedVariablesPerCharacter: FieldJournalCharacterDB
 ## X-Wago-ID: bGoyor60
+## OptionalDeps: LibsAddonTools
 
 Libs/LibStub/LibStub.lua
 Libs/CallbackHandler-1.0/CallbackHandler-1.0.lua
@@ -17,6 +18,7 @@ Core/Bootstrap.lua
 Core/Database.lua
 Core/Migrations.lua
 Core/SlashCommands.lua
+Core/DevTools.lua
 Data/QuestLog.lua
 Data/Bestiary.lua
 Data/Diary.lua

@@ -38,9 +38,11 @@ SlashCmdList.FIELDJOURNAL = function(message)
             .. ", legacy migration " .. migrated .. ".")
         if FieldJournal.databaseError then
             print("Field Journal: database error - " .. tostring(FieldJournal.databaseError))
+            if FieldJournal.logError then FieldJournal.logError(tostring(FieldJournal.databaseError)) end
         end
         if FieldJournal.migrationError then
             print("Field Journal: migration error - " .. tostring(FieldJournal.migrationError))
+            if FieldJournal.logError then FieldJournal.logError(tostring(FieldJournal.migrationError)) end
         end
         return
     end

@@ -44,6 +44,14 @@ Database.SCHEMA_VERSION = 2
 --
 -- backups is reserved for Core/Backup.lua (Plan 3b) and is never read here.
 -- It is declared now so Plan 3b needs no migration step of its own.
+--
+-- profile holds the opposite of char: preferences a player would want shared
+-- across their own characters (window position, last-open tab), never
+-- journal data. AceDB is opened with defaultProfile = true below, so each
+-- character auto-selects its own profile by default -- nothing here is
+-- actually shared until a player deliberately points two characters at the
+-- same profile (Libs-AddonTools' Profile Manager, if installed, or
+-- db:SetProfile()).
 Database.defaults = {
     char = {
         schemaVersion = 0,
@@ -57,6 +65,10 @@ Database.defaults = {
         objectiveState = {},
         questBookmarks = {},
         backups = {},
+    },
+    profile = {
+        windowPoint = nil,
+        lastTab = "quests",
     },
 }
 
@@ -105,6 +117,7 @@ function Database.initialize()
     if not lib then
         FieldJournal.databaseError = "AceDB-3.0 is not loaded"
         print("Field Journal: AceDB-3.0 did not load; the journal cannot record this session.")
+        if FieldJournal.logError then FieldJournal.logError(FieldJournal.databaseError) end
         return nil
     end
 
@@ -113,6 +126,7 @@ function Database.initialize()
         FieldJournal.databaseError = tostring(result)
         print("Field Journal: could not open the database (" .. tostring(result)
             .. "); the journal cannot record this session.")
+        if FieldJournal.logError then FieldJournal.logError(FieldJournal.databaseError) end
         return nil
     end
 
@@ -123,6 +137,7 @@ function Database.initialize()
         if not mOk then
             FieldJournal.migrationError = tostring(mErr)
             print("Field Journal: the legacy migration failed unexpectedly (" .. tostring(mErr) .. ").")
+            if FieldJournal.logError then FieldJournal.logError(FieldJournal.migrationError) end
         end
     end
 
