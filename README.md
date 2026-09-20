@@ -39,6 +39,21 @@ Copy the `FieldJournal` folder into the beta client's `Interface/AddOns` folder.
 
 **WoW Forever Beta SavedVariables bug:** this client has a known bug where addon SavedVariables are written to disk correctly but fail to load back in on `/reload` or a cold client start ([tracked upstream](https://github.com/ClassicWoWCommunity/forever-bugs/issues/34)). Left unaddressed, this can look like Field Journal losing your journal — in practice the data is silently going unread each session and then getting overwritten with whatever partial state the client actually loaded, which *does* destroy real data over repeated reloads. Install [ForeverSVFix](https://github.com/nobewayo/ForeverSVFix) to work around it (it loads the SavedVariables file through the addon's normal file loader, which still works, instead of the client's broken special-case loader). After installing or updating Field Journal, re-run ForeverSVFix's "Repair after addon updates" step, and if you edit `FieldJournal.toc` by hand, keep its injected `## X-ForeverSVFix:` header line and the two loader lines it adds at the top of the file list.
 
+## Continuous integration and Wago releases
+
+GitHub Actions runs the Lua 5.1 suite (`tests/run_tests.lua`) on every push to `main` and every pull request, then dry-runs the [BigWigs packager](https://github.com/BigWigsMods/packager) so the zip matches what Wago.io will receive. Tagged releases (`v*`) re-run the tests, build the Forever-flavor zip (`Interface: 16001` → Wago patch `1.60.1`), attach it to a GitHub Release, and upload it to Wago.io.
+
+The tag must match `## Version` in `FieldJournal.toc` with a leading `v`: version `0.8.0-beta` is released by pushing `v0.8.0-beta`.
+
+The Wago project ID is already in `FieldJournal.toc` (`## X-Wago-ID: bGoyor60`). The release workflow reads repository secret `WAGO_API_KEY` and passes it to the packager as `WAGO_API_TOKEN`. Push a matching version tag to publish:
+
+```
+git tag v0.8.0-beta
+git push origin v0.8.0-beta
+```
+
+A tagged release fails if `WAGO_API_KEY` is missing. Local zips can still be built with `tools/package.ps1`.
+
 ## Quick validation
 
 1. `/reload`, open `/fj`, and confirm all four tabs open without an error.

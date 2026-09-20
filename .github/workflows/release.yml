@@ -1,0 +1,83 @@
+# Publish a tagged build to GitHub Releases and Wago.io (Forever flavor).
+# Project ID lives in FieldJournal.toc as ## X-Wago-ID. The packager reads
+# WAGO_API_TOKEN; GitHub stores that value as the WAGO_API_KEY secret.
+# Tag names must match the TOC version: v0.8.0-beta for ## Version: 0.8.0-beta.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  lua-tests:
+    name: Lua 5.1 tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1
+
+      - name: Run test suite
+        run: lua5.1 tests/run_tests.lua
+
+  release:
+    name: Package and publish
+    needs: lua-tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Confirm tag matches TOC version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          toc_version="$(awk -F':[[:space:]]*' '/^## Version:/{print $2; exit}' FieldJournal.toc | tr -d '\r')"
+          tag="${GITHUB_REF_NAME#v}"
+          if [ -z "$toc_version" ]; then
+            echo "Could not read ## Version from FieldJournal.toc" >&2
+            exit 1
+          fi
+          if [ "$tag" != "$toc_version" ]; then
+            echo "Tag '$GITHUB_REF_NAME' does not match TOC version '$toc_version'." >&2
+            echo "Use a tag of v${toc_version} (or change the TOC version first)." >&2
+            exit 1
+          fi
+          echo "Tag $GITHUB_REF_NAME matches TOC version $toc_version"
+
+      - name: Require Wago publish config
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          WAGO_API_KEY: ${{ secrets.WAGO_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$WAGO_API_KEY" ]; then
+            echo "Repository secret WAGO_API_KEY is not set." >&2
+            echo "Create an API key on the Wago developer portal and add it under Settings → Secrets." >&2
+            exit 1
+          fi
+          toc_id="$(awk -F':[[:space:]]*' '/^## X-Wago-ID:/{print $2; exit}' FieldJournal.toc | tr -d '\r')"
+          if [ -z "$toc_id" ]; then
+            echo "FieldJournal.toc is missing ## X-Wago-ID." >&2
+            exit 1
+          fi
+          echo "Using X-Wago-ID $toc_id from FieldJournal.toc"
+
+      - name: Package and publish to Wago.io
+        uses: BigWigsMods/packager@v2
+        with:
+          args: -g forever
+        env:
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_KEY }}
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}

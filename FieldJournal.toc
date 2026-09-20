@@ -5,6 +5,7 @@
 ## Version: 0.8.0-beta
 ## SavedVariables: FieldJournalDB
 ## SavedVariablesPerCharacter: FieldJournalCharacterDB
+## X-Wago-ID: bGoyor60
 
 Libs/LibStub/LibStub.lua
 Libs/CallbackHandler-1.0/CallbackHandler-1.0.lua
