@@ -124,11 +124,18 @@ local function initializeCharacter()
     -- is precisely the release where a second copy is worth its disk space.
     -- It keeps the old "<realm>:<char>" key format so the legacy shape stays
     -- self-consistent. Core/Backup.lua (Plan 3b) supersedes it.
-    FieldJournalCharacterDB = {
-        key = key, entries = FieldJournal.entries, encounters = FieldJournal.encounters,
-        diaryEvents = FieldJournal.diaryEvents, craftEvents = FieldJournal.craftEvents,
-        bestiary = FieldJournal.bestiary,
-    }
+    -- Only rewrite it once legacyMigrated is true. If the one-time migration
+    -- threw, charData's collections are still empty and legacyMigrated is
+    -- deliberately left false so the next session retries -- overwriting the
+    -- mirror here would destroy the only remaining backup of that data before
+    -- the retry has a chance to run.
+    if charData.legacyMigrated then
+        FieldJournalCharacterDB = {
+            key = key, entries = FieldJournal.entries, encounters = FieldJournal.encounters,
+            diaryEvents = FieldJournal.diaryEvents, craftEvents = FieldJournal.craftEvents,
+            bestiary = FieldJournal.bestiary,
+        }
+    end
     local entries, encounters, bestiary, questBookmarks =
         FieldJournal.entries, FieldJournal.encounters, FieldJournal.bestiary, FieldJournal.questBookmarks
     FieldJournal.Diary.resetGroupSnapshot()

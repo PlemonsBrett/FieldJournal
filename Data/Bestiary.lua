@@ -127,7 +127,7 @@ local function commitLootSlot(slot)
     local db, bestiary = FieldJournal.charData, FieldJournal.bestiary
     local loot = lootSlots[slot]
     lootSlots[slot] = nil
-    if not loot then return end
+    if not loot or not bestiary or not db then return end
     local sourceName
     for _, source in ipairs(loot.sources) do
         local guid = source.guid
