@@ -227,8 +227,10 @@ FieldJournal.frame:SetScript("OnEvent", function(_, event, ...)
     local name = ...
     if event == "ADDON_LOADED" then
         if name ~= addonName then return end
+        if FieldJournal.DevTools and FieldJournal.DevTools.registerLogger then FieldJournal.DevTools.registerLogger() end
         FieldJournal.Database.initialize()
         FieldJournal.recoveredQuestText = FieldJournalQuestText or {}
+        if FieldJournal.DevTools and FieldJournal.DevTools.initialize then FieldJournal.DevTools.initialize() end
     elseif event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
         initializeCharacter()
         if event == "PLAYER_LOGIN" and not partyKillRegistered and not unitDiedRegistered then

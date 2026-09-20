@@ -19,6 +19,7 @@ local specs = {
     "tests/fj_questlog_spec.lua",
     "tests/fj_diary_spec.lua",
     "tests/fj_database_spec.lua",
+    "tests/fj_devtools_spec.lua",
     "tests/fj_migration_spec.lua",
     "tests/fj_no_global_reassignment_spec.lua",
 }

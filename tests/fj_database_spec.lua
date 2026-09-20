@@ -106,6 +106,22 @@ local function test_defaults_populate_the_character_section()
     clearClient()
 end
 
+local function test_profile_defaults_are_present()
+    local fj = loadStack(true)
+    assert(type(fj.Database.defaults.profile) == "table", "defaults.profile is missing")
+    assert(fj.Database.defaults.profile.lastTab == "quests",
+        "defaults.profile.lastTab must default to \"quests\", got " .. tostring(fj.Database.defaults.profile.lastTab))
+    assert(fj.Database.defaults.profile.windowPoint == nil,
+        "defaults.profile.windowPoint must default to nil until the player moves the window")
+    local lines, release = capturePrint()
+    local db = fj.Database.initialize()
+    release()
+    assert(#lines == 0, "the happy path must not print anything")
+    assert(type(db.profile) == "table", "db.profile was not created by AceDB")
+    assert(db.profile.lastTab == "quests", "db.profile.lastTab did not copy its default")
+    clearClient()
+end
+
 local function test_initialize_is_safe_when_acedb_is_missing()
     local fj = loadStack(false)
     local lines, release = capturePrint()
@@ -185,6 +201,7 @@ end
 return {
     test_acedb_initializes_on_a_client_with_a_broken_region = test_acedb_initializes_on_a_client_with_a_broken_region,
     test_defaults_populate_the_character_section = test_defaults_populate_the_character_section,
+    test_profile_defaults_are_present = test_profile_defaults_are_present,
     test_initialize_is_safe_when_acedb_is_missing = test_initialize_is_safe_when_acedb_is_missing,
     test_acedb_survives_a_nil_realm_and_a_nil_character_name = test_acedb_survives_a_nil_realm_and_a_nil_character_name,
     test_acedb_survives_each_guarded_global_being_completely_absent = test_acedb_survives_each_guarded_global_being_completely_absent,

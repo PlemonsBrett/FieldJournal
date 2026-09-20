@@ -12,5 +12,9 @@ Thumbs.db
 *~
 *.bak
 
+# Isolated git worktrees
+.worktrees/
+
 # Packaged addon exports
 dist/
+.release/
