@@ -14,4 +14,5 @@ QuestTextPack.lua
 Core/Bootstrap.lua
 UI/Widgets.lua
 UI/NoteEditor.lua
+UI/Window.lua
 FieldJournal.lua

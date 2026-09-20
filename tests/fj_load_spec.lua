@@ -6,6 +6,7 @@ local MODULES = {
     "Core/Bootstrap.lua",
     "UI/Widgets.lua",
     "UI/NoteEditor.lua",
+    "UI/Window.lua",
     "FieldJournal.lua",
 }
 
@@ -29,6 +30,9 @@ local function test_all_modules_load_into_one_namespace()
     assertFunctions(fj.UI, "FieldJournal.UI", {"makeLabel", "coloredRectangle", "makeButton"})
     assertFunctions(fj.UI, "FieldJournal.UI",
         {"questOptions", "refreshQuestPicker", "openQuestPicker", "createNoteEditor", "createQuestPicker"})
+    assertFunctions(fj.UI, "FieldJournal.UI",
+        {"matchingEntries", "zones", "renderDetailBlocks", "rememberedWhen", "rememberedPlace",
+         "questStageStory", "marginStory", "showDetail", "createWindow"})
 end
 
 local function test_refresh_if_shown_is_safe_without_a_window()
