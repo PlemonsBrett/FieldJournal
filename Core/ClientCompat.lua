@@ -20,18 +20,21 @@ local FieldJournal = select(2, ...)
 local Compat = {}
 FieldJournal.ClientCompat = Compat
 
--- Only these three are wrapped, and each one is wrapped because a nil or
--- out-of-range answer from it crashes AceDB-3.0.lua while it is still loading:
+-- These five are wrapped, each because a nil or out-of-range answer from it
+-- crashes AceDB-3.0.lua while it is still loading:
 --   GetCurrentRegion  -> lines 267-268 (the confirmed crash on this client)
+--   GetRealmName      -> line 259      (nil realm -> concat error)
+--   UnitName          -> line 260      (nil character -> concat error)
 --   UnitFactionGroup  -> lines 262-263 (nil faction -> concat error)
 --   GetLocale         -> line 264      (nil locale  -> :lower() on a nil value)
--- GetRealmName and UnitName are deliberately NOT wrapped: Core/Bootstrap.lua's
--- characterKey() calls both successfully on this client every single session,
--- so they are known-good and guessing at them would be noise.
--- UnitClass and UnitRace are deliberately NOT wrapped either: a nil class or
--- race key does not crash AceDB, it just leaves keyTbl.class / keyTbl.race
--- absent, and this addon never reads db.class or db.race.
-local NAMES = {"GetCurrentRegion", "UnitFactionGroup", "GetLocale"}
+-- Fallbacks for GetRealmName and UnitName match Core/Bootstrap.lua's own
+-- characterKey() fallbacks, so no new behavior is introduced if the client's
+-- raw call actually does return nil — AceDB just gets the same fallback string
+-- characterKey() already uses elsewhere.
+-- UnitClass and UnitRace are deliberately NOT wrapped: a nil class or race key
+-- does not crash AceDB, it just leaves keyTbl.class / keyTbl.race absent, and
+-- this addon never reads db.class or db.race.
+local NAMES = {"GetCurrentRegion", "GetRealmName", "UnitName", "UnitFactionGroup", "GetLocale"}
 
 local originals = {}
 local installed = false
@@ -58,6 +61,22 @@ function Compat.install()
         local ok, value = pcall(getCurrentRegion, ...)
         if not ok then return 1 end
         return Compat.safeRegion(value)
+    end
+
+    local getRealmName = originals.GetRealmName
+    _G.GetRealmName = function(...)
+        if type(getRealmName) ~= "function" then return "Unknown realm" end
+        local ok, value = pcall(getRealmName, ...)
+        if not ok or type(value) ~= "string" or value == "" then return "Unknown realm" end
+        return value
+    end
+
+    local unitName = originals.UnitName
+    _G.UnitName = function(...)
+        if type(unitName) ~= "function" then return "Unknown character" end
+        local ok, value = pcall(unitName, ...)
+        if not ok or type(value) ~= "string" or value == "" then return "Unknown character" end
+        return value
     end
 
     local unitFactionGroup = originals.UnitFactionGroup

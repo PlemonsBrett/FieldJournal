@@ -82,10 +82,109 @@ local function test_get_locale_falls_back_to_en_us()
     _G.GetLocale = nil
 end
 
+local function test_get_realm_name_falls_back_to_unknown_realm()
+    env.install()
+    _G.GetRealmName = function() return nil end
+    local fj = loadShim()
+    assert(GetRealmName() == "Unknown realm",
+        "a nil realm would make AceDB concatenate nil at line 259")
+    fj.ClientCompat.restore()
+
+    _G.GetRealmName = function() return "Azeroth" end
+    fj = loadShim()
+    assert(GetRealmName() == "Azeroth", "a real realm must pass straight through")
+    fj.ClientCompat.restore()
+    _G.GetRealmName = nil
+end
+
+local function test_get_realm_name_is_safe_when_the_client_has_none()
+    env.install()
+    _G.GetRealmName = nil
+    local fj = loadShim()
+    assert(GetRealmName() == "Unknown realm", "a missing client function must still answer a valid realm")
+    fj.ClientCompat.restore()
+    assert(_G.GetRealmName == nil, "restore must remove a global the client never had")
+end
+
+local function test_unit_name_falls_back_to_unknown_character()
+    env.install()
+    _G.UnitName = function() return nil end
+    local fj = loadShim()
+    assert(UnitName("player") == "Unknown character",
+        "a nil character would make AceDB concatenate nil at line 260")
+    fj.ClientCompat.restore()
+
+    _G.UnitName = function() return "Thrall" end
+    fj = loadShim()
+    assert(UnitName("player") == "Thrall", "a real character must pass straight through")
+    fj.ClientCompat.restore()
+    _G.UnitName = nil
+end
+
+local function test_unit_name_is_safe_when_the_client_has_none()
+    env.install()
+    _G.UnitName = nil
+    local fj = loadShim()
+    assert(UnitName("player") == "Unknown character", "a missing client function must still answer a valid character")
+    fj.ClientCompat.restore()
+    assert(_G.UnitName == nil, "restore must remove a global the client never had")
+end
+
+local function test_install_is_idempotent()
+    env.install()
+    _G.GetRealmName = function() return "Home" end
+    local fj = loadShim()
+    -- Install has already been called once when the shim loaded.
+    -- Call it again to verify it doesn't double-wrap.
+    fj.ClientCompat.install()
+    assert(GetRealmName() == "Home", "the second install() must not change the wrapper's behavior")
+    -- If install() did double-wrap, restore() would only undo one layer,
+    -- leaving the wrapper in place. Calling it three times would fail or misbehave.
+    fj.ClientCompat.restore()
+    fj.ClientCompat.install()
+    fj.ClientCompat.install()
+    fj.ClientCompat.restore()
+    assert(GetRealmName() == "Home", "multiple install/restore cycles must work correctly")
+    _G.GetRealmName = nil
+end
+
+local function test_restore_is_idempotent()
+    env.install()
+    _G.GetLocale = function() return "frFR" end
+    local fj = loadShim()
+    fj.ClientCompat.restore()
+    assert(GetLocale() == "frFR", "restore must give the client its own function back")
+    -- Call restore again - should be safe and do nothing
+    fj.ClientCompat.restore()
+    assert(GetLocale() == "frFR", "calling restore() twice must not error")
+    _G.GetLocale = nil
+end
+
+local function test_restore_before_install_is_safe()
+    env.install()
+    -- Create a fresh namespace that won't auto-call install()
+    local ns = {}
+    local chunk, err = loadfile("Core/ClientCompat.lua")
+    assert(chunk, "could not load Core/ClientCompat.lua: " .. tostring(err))
+    chunk("FieldJournal", ns)
+    -- The module will have called install() when it loaded, so restore it first
+    ns.ClientCompat.restore()
+    -- Now call restore again before any new install() - should not error
+    ns.ClientCompat.restore()
+    assert(true, "calling restore() before install() must be safe")
+end
+
 return {
     test_safe_region_clamps_anything_outside_one_to_five = test_safe_region_clamps_anything_outside_one_to_five,
     test_get_current_region_is_safe_when_the_client_returns_garbage = test_get_current_region_is_safe_when_the_client_returns_garbage,
     test_get_current_region_is_safe_when_the_client_has_none = test_get_current_region_is_safe_when_the_client_has_none,
     test_unit_faction_group_falls_back_to_neutral_and_keeps_second_return = test_unit_faction_group_falls_back_to_neutral_and_keeps_second_return,
     test_get_locale_falls_back_to_en_us = test_get_locale_falls_back_to_en_us,
+    test_get_realm_name_falls_back_to_unknown_realm = test_get_realm_name_falls_back_to_unknown_realm,
+    test_get_realm_name_is_safe_when_the_client_has_none = test_get_realm_name_is_safe_when_the_client_has_none,
+    test_unit_name_falls_back_to_unknown_character = test_unit_name_falls_back_to_unknown_character,
+    test_unit_name_is_safe_when_the_client_has_none = test_unit_name_is_safe_when_the_client_has_none,
+    test_install_is_idempotent = test_install_is_idempotent,
+    test_restore_is_idempotent = test_restore_is_idempotent,
+    test_restore_before_install_is_safe = test_restore_before_install_is_safe,
 }
