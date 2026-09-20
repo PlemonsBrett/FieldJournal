@@ -13,6 +13,7 @@ Libs/LibDeflate/LibDeflate.lua
 QuestTextPack.lua
 Core/Bootstrap.lua
 Data/QuestLog.lua
+Data/Bestiary.lua
 Data/Diary.lua
 Data/Crafting.lua
 UI/Widgets.lua

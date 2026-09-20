@@ -5,6 +5,7 @@ local env = dofile("tests/wow_env.lua")
 local MODULES = {
     "Core/Bootstrap.lua",
     "Data/QuestLog.lua",
+    "Data/Bestiary.lua",
     "Data/Diary.lua",
     "Data/Crafting.lua",
     "UI/Widgets.lua",
@@ -42,6 +43,9 @@ local function test_all_modules_load_into_one_namespace()
          "importCompletedQuests", "questSpeaker", "linkRecentConversation", "captureQuest",
          "activeQuests", "syncActiveQuestLog", "buildQuestViews", "beginNote", "closeNote",
          "questAccepted", "captureGossip"})
+    assertFunctions(fj.Bestiary, "FieldJournal.Bestiary",
+        {"observeUnit", "observedName", "recordEncounter", "captureLootSlots", "commitLootSlot",
+         "clearLootSlots", "partyKill", "unitDied", "buildBestiaryViews"})
     assertFunctions(fj.Diary, "FieldJournal.Diary",
         {"addLifeEvent", "spellName", "learnedSpell", "currentGroup", "updateGroup",
          "resetGroupSnapshot", "bagSnapshot", "checkMerchant", "trainerShown", "trainerClosed",
