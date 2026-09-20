@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.8.2-beta
+
+### Added
+
+- Add the rotating five-slot backup ring with a data-loss guard
+- Restore a lost journal from the backup ring without aliasing or resurrecting placeholders
+- Take one backup snapshot at login, never on a zone change
+- Restore from the backup ring in /fj repair and add /fj backup
+
+
+### Changed
+
+- Publish deepCopy, highestOrder and countText for the backup module
+
+
+### Documentation
+
+- Document the rotating backup ring, /fj backup and the redesigned /fj repair
+- Refresh stale Backup.lua comments left by the Task 2 and 3 fix rounds
+
+
+### Fixed
+
+- Close the entries-wipe gap and guard the ring against throws
+- Stop /fj repair from reporting a false restore when a merge only reintroduces then re-drops a placeholder
+- Keep the per-character mirror and make it a complete second copy
+
 ## 0.8.1-beta
 
 ### Added

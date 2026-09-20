@@ -2,7 +2,7 @@
 ## Title: Field Journal
 ## Notes: A quiet journal of quests and conversations you have encountered in WoW Forever.
 ## Author: Brett and Codex
-## Version: 0.8.1-beta
+## Version: 0.8.2-beta
 ## SavedVariables: FieldJournalDB
 ## SavedVariablesPerCharacter: FieldJournalCharacterDB
 ## X-Wago-ID: bGoyor60
