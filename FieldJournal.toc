@@ -10,7 +10,7 @@ Libs/LibStub/LibStub.lua
 Libs/CallbackHandler-1.0/CallbackHandler-1.0.lua
 Libs/AceSerializer-3.0/AceSerializer-3.0.lua
 Libs/LibDeflate/LibDeflate.lua
-QuestTextPack.lua
+assets/QuestTextPack.lua
 Core/Bootstrap.lua
 Core/SlashCommands.lua
 Data/QuestLog.lua
