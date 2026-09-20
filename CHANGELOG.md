@@ -16,6 +16,18 @@
 
 **Full Changelog**: https://github.com/PlemonsBrett/FieldJournal/commits/v0.8.0-beta
 
+## Rotating self-heal backups
+
+Field Journal now keeps its own backups. At each login it takes a snapshot of the current character's journal and stores it in a five-slot rotating ring inside that character's saved data. A snapshot is skipped when nothing has changed since the last one, and — importantly — it is also skipped, with a warning, when the character has *fewer* records than its most recent snapshot. That second rule exists so a session that loads damaged or empty data can never quietly rotate five good snapshots out of the ring one login at a time.
+
+`/fj repair` now does two things. First it merges every snapshot in the ring back into the live journal, using the same identity-based, never-overwrite, keep-the-higher-count rules the addon has always used for merges, and reports exactly what that recovered (or "no repair needed"). Then it rebuilds the bestiary index from the encounter log as it always did — so an encounter recovered from a backup is counted in the same command. The restore always works on a copy of the snapshot, so a restored record is never the same table as the backup's own record, and it re-applies the rule that deletes an earlier-quest placeholder once you have captured that quest's real text, so a restore cannot resurrect quests you have already replaced.
+
+New command: `/fj backup` lists the ring with each snapshot's timestamp and record counts, and `/fj backup now` takes one immediately (honouring the same skip rules). `/fj status` now reports how full the ring is and when the newest snapshot was taken.
+
+This replaces the `FieldJournalRecoveryDB` / `DB2` / `DB3` pattern permanently: those hand-added globals existed only because data was lost and spliced back in by hand, and no future incident needs a new one. They are still never written to, and their contents were already absorbed by the AceDB migration below.
+
+The per-character `FieldJournalCharacterDB` mirror is deliberately **kept**, not retired. It is the only copy of a character's journal that lives in a different saved-variables file from the account-wide `FieldJournalDB` — and losing that account file whole is exactly the 0.7.x failure an in-file backup ring cannot defend against. It now also carries quest bookmarks and in-flight objective progress, making it a complete second copy.
+
 ## AceDB-3.0 persistence migration
 
 Journal data now lives in an AceDB-3.0-managed per-character store (`FieldJournalDB.char`) instead of the raw account-wide table indexed by hand-built character keys. A one-time migration runs automatically the first time each character logs in: it reads the old `characters`/`encounters`/`diaryEvents`/`craftEvents`/`bestiary`/`objectiveStates`/`questBookmarks` tables (plus the per-character `FieldJournalCharacterDB` mirror and any `FieldJournalRecoveryDB`/`DB2`/`DB3` snapshots), merges them with the same identity-based, never-overwrite rules the addon has always used, and marks itself done so it never re-runs. The old data is left untouched on disk as a fallback. `/fj status` now reports the schema version and whether the legacy migration has completed.
