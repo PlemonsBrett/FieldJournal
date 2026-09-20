@@ -5,6 +5,7 @@ local env = dofile("tests/wow_env.lua")
 local MODULES = {
     "Core/ClientCompat.lua",
     "Core/Bootstrap.lua",
+    "Core/Database.lua",
     "Core/SlashCommands.lua",
     "Data/QuestLog.lua",
     "Data/Bestiary.lua",
@@ -42,6 +43,10 @@ local function test_all_modules_load_into_one_namespace()
     assert(type(fj.ClientCompat) == "table", "FieldJournal.ClientCompat is missing")
     assertFunctions(fj.ClientCompat, "FieldJournal.ClientCompat", {"install", "restore", "safeRegion"})
     fj.ClientCompat.restore()
+    assert(type(fj.Database) == "table", "FieldJournal.Database is missing")
+    assertFunctions(fj.Database, "FieldJournal.Database", {"initialize"})
+    assert(fj.Database.SCHEMA_VERSION == 2, "SCHEMA_VERSION changed unexpectedly")
+    assert(type(fj.Database.defaults.char) == "table", "defaults.char is missing")
     assertFunctions(fj.QuestLog, "FieldJournal.QuestLog",
         {"recoveredBody", "addEntry", "questTitle", "findUniqueQuestMention", "updateNoteBody",
          "captureNotePage", "captureSpeech", "flushPendingSpeech", "isPlaceholder",
