@@ -13,13 +13,24 @@ local coloredRectangle = FieldJournal.UI.coloredRectangle
 local makeButton = FieldJournal.UI.makeButton
 local openQuestPicker = FieldJournal.UI.openQuestPicker
 local createWindow = FieldJournal.UI.createWindow
+local addEntry = FieldJournal.QuestLog.addEntry
+local beginNote = FieldJournal.QuestLog.beginNote
+local captureGossip = FieldJournal.QuestLog.captureGossip
+local captureNotePage = FieldJournal.QuestLog.captureNotePage
+local captureQuest = FieldJournal.QuestLog.captureQuest
+local captureSpeech = FieldJournal.QuestLog.captureSpeech
+local closeNote = FieldJournal.QuestLog.closeNote
+local findUniqueQuestMention = FieldJournal.QuestLog.findUniqueQuestMention
+local flushPendingSpeech = FieldJournal.QuestLog.flushPendingSpeech
+local questAccepted = FieldJournal.QuestLog.questAccepted
+local questSpeaker = FieldJournal.QuestLog.questSpeaker
+local questTitle = FieldJournal.QuestLog.questTitle
+local recoveredBody = FieldJournal.QuestLog.recoveredBody
+local syncActiveQuestLog = FieldJournal.QuestLog.syncActiveQuestLog
 FieldJournal.frame = CreateFrame("Frame")
 FieldJournal.UI.zoneFilter = "All zones"
 FieldJournal.UI.searchText = ""
 FieldJournal.UI.viewItems = {}
-local activeNoteTitle
-local activeNoteKey
-local pendingSpeech = {}
 local recentDeaths = {}
 local observedUnits = {}
 local observedUnitCount = 0
@@ -28,7 +39,6 @@ local merchantContext
 local trainerContext
 local groupSnapshot
 local recentCrafts = {}
-local recentQuestContexts = {}
 local recentTraining = {}
 local initializeCharacter
 
@@ -64,197 +74,6 @@ local function addLifeEvent(collection, kind, title, body, extra)
     if #collection > 3000 then table.remove(collection, 1) end
     FieldJournal.UI.RefreshIfShown()
     return event
-end
-
-local function recoveredBody(questID)
-    local recoveredQuestText = FieldJournal.recoveredQuestText
-    local text = recoveredQuestText and recoveredQuestText[questID]
-    if not text then return nil end
-    local class = UnitClass("player") or "adventurer"
-    return "Quest description\n\n" .. text:gsub("%$c", class)
-end
-
-local function addEntry(kind, id, stage, title, body, speaker, linkedQuestID)
-    local db, entries = FieldJournal.db, FieldJournal.entries
-    body = clean(body)
-    if body == "" or not entries then return end
-    title = clean(title)
-    speaker = clean(speaker)
-    local key = table.concat({kind, tostring(id or 0), stage or "", speaker, body}, "\031")
-    local entry = entries[key]
-    if not entry then
-        if kind == "quest" and id then entries["past:" .. id] = nil end
-        db.nextOrder = db.nextOrder + 1
-        entry = {
-            key = key,
-            kind = kind,
-            questID = id,
-            stage = stage,
-            title = title ~= "" and title or (speaker ~= "" and speaker or "Conversation"),
-            speaker = speaker,
-            body = body,
-            zone = currentZone(),
-            place = currentPlace(),
-            seenAt = time(),
-            order = db.nextOrder,
-            bookmarked = false,
-            linkedQuestID = linkedQuestID,
-        }
-        entries[key] = entry
-        entry.mapID, entry.mapX, entry.mapY = currentMapPosition()
-    FieldJournal.UI.RefreshIfShown()
-    elseif linkedQuestID and not entry.linkedQuestID then
-        entry.linkedQuestID = linkedQuestID
-    end
-    return entry
-end
-FieldJournal.QuestLog.addEntry = addEntry
-
-local function questTitle(questID)
-    local entries = FieldJournal.entries
-    for _, entry in pairs(entries or {}) do
-        if (entry.kind == "quest" or entry.kind == "pastQuest") and entry.questID == questID then
-            return entry.title
-        end
-    end
-    if C_QuestLog and C_QuestLog.GetTitleForQuestID then
-        local title = C_QuestLog.GetTitleForQuestID(questID)
-        if clean(title) ~= "" then return title end
-    end
-    return "Quest #" .. tostring(questID)
-end
-FieldJournal.QuestLog.questTitle = questTitle
-
-local function findUniqueQuestMention(term)
-    local entries = FieldJournal.entries
-    term = clean(term):lower()
-    if #term < 4 then return nil end
-    local matches = {}
-    local function consider(questID, title, body)
-        if questID and ((title or "") .. " " .. (body or "")):lower():find(term, 1, true) then
-            matches[questID] = true
-        end
-    end
-    for _, entry in pairs(entries or {}) do
-        if entry.kind == "quest" and entry.questID then
-            consider(entry.questID, entry.title, entry.body)
-        end
-    end
-    if C_QuestLog and C_QuestLog.GetNumQuestLogEntries and C_QuestLog.GetInfo and GetQuestLogQuestText then
-        local count = C_QuestLog.GetNumQuestLogEntries() or 0
-        for index = 1, count do
-            local info = C_QuestLog.GetInfo(index)
-            if info and not info.isHeader and info.questID then
-                local description, objective = GetQuestLogQuestText(index)
-                local text = (description or "") .. " " .. (objective or "")
-                if C_QuestLog.GetQuestObjectives then
-                    for _, task in ipairs(C_QuestLog.GetQuestObjectives(info.questID) or {}) do
-                        text = text .. " " .. (task.text or "")
-                    end
-                end
-                consider(info.questID, info.title, text)
-            end
-        end
-    end
-    local only
-    for questID in pairs(matches) do
-        if only then return nil end
-        only = questID
-    end
-    return only
-end
-
-local function updateNoteBody(entry)
-    local parts = {}
-    local maxPage = 0
-    for page in pairs(entry.pages) do
-        if page > maxPage then maxPage = page end
-    end
-    for page = 1, maxPage do
-        if entry.pages[page] then
-            if maxPage > 1 then parts[#parts + 1] = "Page " .. page .. "\n" end
-            parts[#parts + 1] = entry.pages[page]
-            parts[#parts + 1] = "\n\n"
-        end
-    end
-    entry.body = clean(table.concat(parts))
-end
-
-local function captureNotePage()
-    local db, entries = FieldJournal.db, FieldJournal.entries
-    if not entries or not ItemTextGetText then return end
-    local body = clean(ItemTextGetText())
-    if body == "" then return end
-    local title = clean((ItemTextGetItem and ItemTextGetItem()) or activeNoteTitle)
-    if title == "" then title = "Unmarked note" end
-    local page = (ItemTextGetPage and ItemTextGetPage()) or 1
-    if type(page) ~= "number" or page < 1 then page = 1 end
-    if page == 1 or not activeNoteKey then
-        -- The first page identifies a note when a book is reopened later.
-        activeNoteKey = table.concat({"note", title, body}, "\031")
-    end
-    local entry = entries[activeNoteKey]
-    if not entry then
-        db.nextOrder = db.nextOrder + 1
-        entry = {
-            key = activeNoteKey,
-            kind = "note",
-            stage = "Note",
-            title = title,
-            speaker = "",
-            body = "",
-            pages = {},
-            zone = currentZone(),
-            place = currentPlace(),
-            seenAt = time(),
-            order = db.nextOrder,
-            bookmarked = false,
-            linkedQuestID = findUniqueQuestMention(title),
-        }
-        entries[activeNoteKey] = entry
-        entry.mapID, entry.mapX, entry.mapY = currentMapPosition()
-    end
-    if not entry.linkedQuestID then entry.linkedQuestID = findUniqueQuestMention(title) end
-    entry.pages = entry.pages or {}
-    entry.pages[page] = body
-    updateNoteBody(entry)
-    FieldJournal.UI.RefreshIfShown()
-end
-
-local function captureSpeech(stage, message, speaker)
-    if canaccessvalue and (not canaccessvalue(message) or not canaccessvalue(speaker)) then
-        pendingSpeech[#pendingSpeech + 1] = {stage, message, speaker}
-        return
-    end
-    if issecretvalue and (issecretvalue(message) or issecretvalue(speaker))
-        and not canaccessvalue then return end
-    speaker = clean(speaker)
-    if speaker == "" then speaker = "Unknown voice" end
-    local questID = findUniqueQuestMention(speaker)
-    if not questID then
-        local candidate, ambiguous
-        for id, context in pairs(recentQuestContexts) do
-            if context.speaker == speaker and time() - context.at <= 300
-                and context.zone == currentZone() then
-                if candidate and candidate ~= id then ambiguous = true break end
-                candidate = id
-            end
-        end
-        if not ambiguous then questID = candidate end
-    end
-    addEntry("speech", nil, stage, speaker, message, "", questID)
-end
-
-local function flushPendingSpeech()
-    local remaining = {}
-    for _, line in ipairs(pendingSpeech) do
-        if canaccessvalue and (not canaccessvalue(line[2]) or not canaccessvalue(line[3])) then
-            remaining[#remaining + 1] = line
-        else
-            captureSpeech(line[1], line[2], line[3])
-        end
-    end
-    pendingSpeech = remaining
 end
 
 local function observeUnit(unit)
@@ -340,158 +159,6 @@ local function recordEncounter(guid, name, source)
     end
     FieldJournal.UI.RefreshIfShown()
 end
-
-local function isPlaceholder(entry)
-    if not entry or entry.kind ~= "pastQuest" then return false end
-    local body = entry.body or ""
-    return body:find("This quest was completed before Field Journal", 1, true) ~= nil
-        or body:find("The original words have not been found", 1, true) ~= nil
-end
-FieldJournal.QuestLog.isPlaceholder = isPlaceholder
-
-local function importCompletedQuests(silent)
-    local db, entries = FieldJournal.db, FieldJournal.entries
-    if not entries or not C_QuestLog or not C_QuestLog.GetAllCompletedQuestIDs then
-        if not silent then print("Field Journal: completed quest history is unavailable in this client.") end
-        return
-    end
-    local ids = C_QuestLog.GetAllCompletedQuestIDs() or {}
-    local recovered = 0
-    local recorded = {}
-    for _, entry in pairs(entries) do
-        if entry.kind == "quest" and entry.questID then recorded[entry.questID] = true end
-    end
-    for _, id in ipairs(ids) do
-        local key = "past:" .. id
-        local recoveredText = recoveredBody(id)
-        if recoveredText and not recorded[id] and entries[key] and
-            (isPlaceholder(entries[key]) or entries[key].stage ~= "Recovered description") then
-            entries[key].stage = "Recovered description"
-            entries[key].body = recoveredText
-            recovered = recovered + 1
-        elseif recoveredText and not recorded[id] and not entries[key] then
-            local title = C_QuestLog.GetTitleForQuestID and C_QuestLog.GetTitleForQuestID(id)
-            if clean(title) ~= "" then
-                db.nextOrder = db.nextOrder + 1
-                entries[key] = {
-                    key = key,
-                    kind = "pastQuest",
-                    questID = id,
-                    stage = "Recovered description",
-                    title = title,
-                    speaker = "",
-                    body = recoveredText,
-                    zone = "Earlier adventures",
-                    seenAt = nil,
-                    order = db.nextOrder,
-                    bookmarked = false,
-                }
-                recovered = recovered + 1
-            end
-        end
-    end
-    if not silent then print("Field Journal: recovered " .. recovered .. " earlier quest descriptions. Unverified title-only entries are hidden.") end
-    FieldJournal.UI.RefreshIfShown()
-end
-FieldJournal.QuestLog.importCompletedQuests = importCompletedQuests
-
-local function questSpeaker()
-    return UnitName("npc") or UnitName("target") or ""
-end
-
-local function linkRecentConversation(questID, speaker)
-    local entries = FieldJournal.entries
-    if not questID or clean(speaker) == "" then return end
-    local now = time()
-    local changed = false
-    for _, entry in pairs(entries or {}) do
-        if entry.kind == "gossip" and not entry.linkedQuestID
-            and entry.title == speaker and entry.seenAt
-            and now - entry.seenAt <= 120 and entry.zone == currentZone() then
-            entry.linkedQuestID = questID
-            changed = true
-        end
-    end
-    if changed then FieldJournal.UI.RefreshIfShown() end
-end
-
-local function captureQuest(stage)
-    local id = GetQuestID and GetQuestID() or nil
-    local title = GetTitleText and GetTitleText() or ""
-    local speaker = questSpeaker()
-    if id and clean(speaker) ~= "" then
-        recentQuestContexts[id] = {speaker = speaker, at = time(), zone = currentZone()}
-    end
-    if stage == "Offered" then
-        local description = GetQuestText and GetQuestText() or ""
-        local objectives = GetObjectiveText and GetObjectiveText() or ""
-        local body = clean(description)
-        if clean(objectives) ~= "" and objectives ~= description then
-            body = body .. "\n\nObjectives\n" .. objectives
-        end
-        addEntry("quest", id, stage, title, body, speaker)
-    elseif stage == "In progress" then
-        addEntry("quest", id, stage, title, GetProgressText and GetProgressText() or "", speaker)
-    elseif stage == "Completed" then
-        addEntry("quest", id, stage, title, GetRewardText and GetRewardText() or "", speaker)
-    end
-    linkRecentConversation(id, speaker)
-end
-
-local function activeQuests()
-    local result = {}
-    if C_QuestLog and C_QuestLog.GetNumQuestLogEntries and C_QuestLog.GetInfo then
-        local count = C_QuestLog.GetNumQuestLogEntries() or 0
-        for index = 1, count do
-            local info = C_QuestLog.GetInfo(index)
-            if info and not info.isHeader and info.questID then result[info.questID] = info end
-        end
-    end
-    return result
-end
-FieldJournal.QuestLog.activeQuests = activeQuests
-
-local function syncActiveQuestLog()
-    local entries, objectiveState = FieldJournal.entries, FieldJournal.objectiveState
-    if not entries or not C_QuestLog or not C_QuestLog.GetNumQuestLogEntries or not C_QuestLog.GetInfo then return end
-    local count = C_QuestLog.GetNumQuestLogEntries() or 0
-    for index = 1, count do
-        local info = C_QuestLog.GetInfo(index)
-        if info and not info.isHeader and info.questID then
-            local id = info.questID
-            local captured = false
-            for _, entry in pairs(entries) do
-                if entry.questID == id and entry.kind == "quest" then captured = true break end
-            end
-            if not captured and GetQuestLogQuestText then
-                local description, objectives = GetQuestLogQuestText(index)
-                local body = clean(description)
-                if clean(objectives) ~= "" then body = body .. "\n\nObjectives\n" .. objectives end
-                addEntry("quest", id, "In log", info.title, body, "")
-            end
-            if C_QuestLog.GetQuestObjectives then
-                local objectives = C_QuestLog.GetQuestObjectives(id)
-                if objectives then
-                    local states = objectiveState[id]
-                    if not states then states = {}; objectiveState[id] = states end
-                    for objectiveIndex, objective in ipairs(objectives) do
-                        local objectiveText = clean(objective.text)
-                        local previous = states[objectiveIndex]
-                        if type(previous) == "table" and objectiveText ~= "" then
-                            if not previous.finished and objective.finished then
-                                addEntry("questStatus", id, "Objective finished", info.title, objectiveText, "")
-                            elseif previous.text ~= objectiveText then
-                                addEntry("questStatus", id, "Objective updated", info.title, objectiveText, "")
-                            end
-                        end
-                        states[objectiveIndex] = {text = objectiveText, finished = objective.finished and true or false}
-                    end
-                end
-            end
-        end
-    end
-end
-FieldJournal.QuestLog.syncActiveQuestLog = syncActiveQuestLog
 
 local function captureLootSlots()
     if not GetNumLootItems or not GetLootSlotInfo then return end
@@ -1113,12 +780,7 @@ FieldJournal.frame:SetScript("OnEvent", function(_, event, ...)
         captureQuest("Completed")
     elseif event == "QUEST_ACCEPTED" then
         local questID = select(2, ...) or (type(name) == "number" and name)
-        if questID then
-            local speaker = questSpeaker()
-            if clean(speaker) ~= "" then recentQuestContexts[questID] = {speaker = speaker, at = time(), zone = currentZone()} end
-            addEntry("questStatus", questID, "Accepted", questTitle(questID), "Added to my quest log.", questSpeaker())
-            syncActiveQuestLog()
-        end
+        questAccepted(questID)
     elseif event == "QUEST_TURNED_IN" then
         local questID = name
         if questID then
@@ -1127,24 +789,13 @@ FieldJournal.frame:SetScript("OnEvent", function(_, event, ...)
     elseif event == "QUEST_LOG_UPDATE" then
         syncActiveQuestLog()
     elseif event == "GOSSIP_SHOW" then
-        if C_GossipInfo and C_GossipInfo.GetText then
-            local speaker = questSpeaker()
-            local linked = findUniqueQuestMention(speaker)
-            if not linked then
-                for id, context in pairs(recentQuestContexts) do
-                    if context.speaker == speaker and time() - context.at <= 300 then linked = id end
-                end
-            end
-            addEntry("gossip", nil, "Conversation", speaker, C_GossipInfo.GetText(), speaker, linked)
-        end
+        captureGossip()
     elseif event == "ITEM_TEXT_BEGIN" then
-        activeNoteTitle = clean((ItemTextGetItem and ItemTextGetItem()) or "")
-        activeNoteKey = nil
+        beginNote()
     elseif event == "ITEM_TEXT_READY" then
         captureNotePage()
     elseif event == "ITEM_TEXT_CLOSED" then
-        activeNoteTitle = nil
-        activeNoteKey = nil
+        closeNote()
     elseif event == "CHAT_MSG_MONSTER_SAY" then
         captureSpeech("Said", name, select(2, ...))
     elseif event == "CHAT_MSG_MONSTER_YELL" then

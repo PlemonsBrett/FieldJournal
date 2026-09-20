@@ -4,6 +4,7 @@ local env = dofile("tests/wow_env.lua")
 -- new module here so the suite always loads exactly what the client loads.
 local MODULES = {
     "Core/Bootstrap.lua",
+    "Data/QuestLog.lua",
     "UI/Widgets.lua",
     "UI/NoteEditor.lua",
     "UI/Window.lua",
@@ -33,6 +34,12 @@ local function test_all_modules_load_into_one_namespace()
     assertFunctions(fj.UI, "FieldJournal.UI",
         {"matchingEntries", "zones", "renderDetailBlocks", "rememberedWhen", "rememberedPlace",
          "questStageStory", "marginStory", "showDetail", "createWindow"})
+    assertFunctions(fj.QuestLog, "FieldJournal.QuestLog",
+        {"recoveredBody", "addEntry", "questTitle", "findUniqueQuestMention", "updateNoteBody",
+         "captureNotePage", "captureSpeech", "flushPendingSpeech", "isPlaceholder",
+         "importCompletedQuests", "questSpeaker", "linkRecentConversation", "captureQuest",
+         "activeQuests", "syncActiveQuestLog", "buildQuestViews", "beginNote", "closeNote",
+         "questAccepted", "captureGossip"})
 end
 
 local function test_refresh_if_shown_is_safe_without_a_window()

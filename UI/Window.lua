@@ -23,91 +23,10 @@ local countText
 local historyButton
 
 local function matchingEntries()
-    local entries, questBookmarks = FieldJournal.entries, FieldJournal.questBookmarks
-    local searchText, zoneFilter = FieldJournal.UI.searchText, FieldJournal.UI.zoneFilter
     if currentTab == "diary" then return FieldJournal.Diary.buildLifeViews(FieldJournal.diaryEvents, "diary") end
     if currentTab == "bestiary" then return FieldJournal.Bestiary.buildBestiaryViews() end
     if currentTab == "craft" then return FieldJournal.Diary.buildLifeViews(FieldJournal.craftEvents, "craft") end
-    local result, groups, loose = {}, {}, {}
-    local active = FieldJournal.QuestLog.activeQuests()
-    local captured = {}
-    FieldJournal.UI.viewItems = {}
-    local viewItems = FieldJournal.UI.viewItems
-    for _, entry in pairs(entries or {}) do
-        if entry.kind == "quest" and entry.questID then captured[entry.questID] = true end
-    end
-    local function groupFor(questID)
-        local group = groups[questID]
-        if not group then
-            group = {
-                key = "quest:" .. questID,
-                kind = "questGroup",
-                questID = questID,
-                title = FieldJournal.QuestLog.questTitle(questID),
-                zone = "Earlier adventures",
-                order = 0,
-                active = active[questID] ~= nil,
-                items = {},
-                bookmarked = questBookmarks and questBookmarks[questID] or false,
-            }
-            groups[questID] = group
-            viewItems[group.key] = group
-        end
-        return group
-    end
-    for questID, info in pairs(active) do
-        local group = groupFor(questID)
-        group.title = clean(info.title) ~= "" and info.title or group.title
-        group.zone = currentZone()
-    end
-    for key, entry in pairs(entries or {}) do
-        if entry.questID and (entry.kind == "quest" or entry.kind == "pastQuest" or entry.kind == "questStatus" or entry.kind == "margin")
-            and not FieldJournal.QuestLog.isPlaceholder(entry) and not (entry.kind == "pastQuest" and captured[entry.questID]) then
-            local group = groupFor(entry.questID)
-            group.items[#group.items + 1] = entry
-            viewItems[key] = entry
-            group.order = math.max(group.order, entry.order or 0)
-            if entry.kind == "quest" or entry.kind == "pastQuest" then group.title = entry.title end
-            if entry.zone and entry.zone ~= "Earlier adventures"
-                and (entry.order or 0) >= (group.zoneOrder or 0) then
-                group.zone = entry.zone
-                group.zoneOrder = entry.order or 0
-            end
-        elseif entry.kind == "note" or entry.kind == "speech" or entry.kind == "gossip" or entry.kind == "kill" or entry.kind == "pickup" then
-            viewItems[key] = entry
-            if entry.linkedQuestID then
-                local group = groupFor(entry.linkedQuestID)
-                group.items[#group.items + 1] = entry
-                group.order = math.max(group.order, entry.order or 0)
-            else
-                loose[#loose + 1] = entry
-            end
-        end
-    end
-    local query = searchText:lower()
-    for _, group in pairs(groups) do
-        local haystack = group.title .. " " .. group.zone
-        for _, item in ipairs(group.items) do
-            haystack = haystack .. " " .. (item.title or "") .. " " .. (item.speaker or "") .. " " .. (item.body or "")
-        end
-        if (zoneFilter == "All zones" or group.zone == zoneFilter)
-            and (query == "" or haystack:lower():find(query, 1, true)) then
-            result[#result + 1] = group.key
-        end
-    end
-    for _, entry in ipairs(loose) do
-        if (zoneFilter == "All zones" or entry.zone == zoneFilter)
-            and (query == "" or (entry.title .. " " .. entry.body):lower():find(query, 1, true)) then
-            result[#result + 1] = entry.key
-        end
-    end
-    table.sort(result, function(a, b)
-        local left, right = viewItems[a], viewItems[b]
-        if left.bookmarked ~= right.bookmarked then return left.bookmarked end
-        if (left.active or false) ~= (right.active or false) then return left.active end
-        return (left.order or 0) > (right.order or 0)
-    end)
-    return result
+    return FieldJournal.QuestLog.buildQuestViews()
 end
 
 local function zones()
