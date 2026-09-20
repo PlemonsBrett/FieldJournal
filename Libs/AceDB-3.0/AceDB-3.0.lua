@@ -255,16 +255,42 @@ local preserve_keys = {
 	["children"] = true,
 }
 
-local realmKey = GetRealmName()
-local charKey = UnitName("player") .. " - " .. realmKey
+-- FIELD JOURNAL PATCH (2026-09-19): this addon's target client answers some of
+-- these calls with nil or out-of-range values at file-load time (GetCurrentRegion()
+-- in particular returns a value outside 1-5 on this client, and GetRealmName()/
+-- UnitName()/UnitFactionGroup()/GetLocale() cannot be assumed safe either), which
+-- the original code below concatenated/indexed unconditionally and crashed on
+-- ("attempt to concatenate local 'regionKey' (a nil value)"). Wrapping these WoW
+-- globals from addon code (replacing them temporarily, then restoring them) was
+-- tried first and reverted: on this client, that caused Blizzard's own protected
+-- UI code to inherit FieldJournal's taint under Patch 12.1's secret-value
+-- protections, permanently breaking unit-frame health bars for the rest of the
+-- session, because restoring a wrapped global's value does not clear the taint
+-- mark WoW's client places on it. Patching the values inline here instead calls
+-- only the real Blizzard functions directly and never reassigns any global, so no
+-- taint is possible. This is the one deliberate exception to this project's
+-- "vendored files are embedded exactly as downloaded, never hand-edited" rule.
+local realmKey = GetRealmName() or "Unknown realm"
+local charKey = (UnitName("player") or "Unknown character") .. " - " .. realmKey
 local _, classKey = UnitClass("player")
 local _, raceKey = UnitRace("player")
 local factionKey = UnitFactionGroup("player")
+if type(factionKey) ~= "string" or factionKey == "" then factionKey = "Neutral" end
 local factionrealmKey = factionKey .. " - " .. realmKey
-local localeKey = GetLocale():lower()
+-- GetLocale itself may not exist at all on this client (not merely return a
+-- bad value), so guard the call, matching the abandoned shim's same check.
+local localeValue
+if type(GetLocale) == "function" then localeValue = GetLocale() end
+if type(localeValue) ~= "string" or localeValue == "" then localeValue = "enUS" end
+local localeKey = localeValue:lower()
 
 local regionTable = { "US", "KR", "EU", "TW", "CN" }
-local regionKey = regionTable[GetCurrentRegion()]
+local regionValue = GetCurrentRegion()
+if type(regionValue) ~= "number" or regionValue ~= math.floor(regionValue)
+    or regionValue < 1 or regionValue > 5 then
+	regionValue = 1
+end
+local regionKey = regionTable[regionValue]
 local factionrealmregionKey = factionrealmKey .. " - " .. regionKey
 
 -- Actual database initialization function

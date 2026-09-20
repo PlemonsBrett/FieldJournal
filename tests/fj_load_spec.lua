@@ -3,7 +3,6 @@ local env = dofile("tests/wow_env.lua")
 -- Every Field Journal file, in .toc order. Each extraction task appends its
 -- new module here so the suite always loads exactly what the client loads.
 local MODULES = {
-    "Core/ClientCompat.lua",
     "Core/Bootstrap.lua",
     "Core/Database.lua",
     "Core/SlashCommands.lua",
@@ -40,9 +39,6 @@ local function test_all_modules_load_into_one_namespace()
     assertFunctions(fj.UI, "FieldJournal.UI",
         {"matchingEntries", "zones", "renderDetailBlocks", "rememberedWhen", "rememberedPlace",
          "questStageStory", "marginStory", "showDetail", "createWindow"})
-    assert(type(fj.ClientCompat) == "table", "FieldJournal.ClientCompat is missing")
-    assertFunctions(fj.ClientCompat, "FieldJournal.ClientCompat", {"install", "restore", "safeRegion"})
-    fj.ClientCompat.restore()
     assert(type(fj.Database) == "table", "FieldJournal.Database is missing")
     assertFunctions(fj.Database, "FieldJournal.Database", {"initialize"})
     assert(fj.Database.SCHEMA_VERSION == 2, "SCHEMA_VERSION changed unexpectedly")

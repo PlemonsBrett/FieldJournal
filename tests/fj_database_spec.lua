@@ -3,8 +3,8 @@ local env = dofile("tests/wow_env.lua")
 -- Reproduces this addon's actual client as closely as plain Lua allows:
 -- GetCurrentRegion() answers outside AceDB's {US,KR,EU,TW,CN} table,
 -- UnitFactionGroup() answers nil, and GetLocale() does not exist at all.
--- Loading AceDB-3.0 under these conditions is exactly what killed the live
--- client before Core/ClientCompat.lua existed.
+-- These are exactly the hostile values the AceDB-3.0.lua patch (see
+-- Libs/AceDB-3.0/AceDB-3.0.lua) must survive.
 local function hostileClient()
     env.install()
     _G.GetRealmName = function() return "TestRealm" end
@@ -52,7 +52,6 @@ local function loadStack(withAceDB)
         assert(chunk, "could not load " .. path .. ": " .. tostring(err))
         chunk("FieldJournal", ns)
     end
-    run("Core/ClientCompat.lua")
     if withAceDB then
         dofile("Libs/LibStub/LibStub.lua")
         dofile("Libs/AceDB-3.0/AceDB-3.0.lua")
@@ -64,10 +63,13 @@ end
 
 local function test_acedb_initializes_on_a_client_with_a_broken_region()
     local fj = loadStack(true)
-    -- Core/Database.lua restores the globals at load; the client's own broken
-    -- answers must be back exactly as they were.
-    assert(GetCurrentRegion() == 72, "Core/Database.lua did not restore GetCurrentRegion")
-    assert(_G.GetLocale == nil, "Core/Database.lua did not restore the missing GetLocale")
+    -- Nothing in this addon may ever reassign these globals (that approach
+    -- caused a real live taint incident under WoW's secret-value protections).
+    -- AceDB-3.0.lua's patched lines must call the real client functions
+    -- directly, so they must be completely untouched after loading.
+    assert(GetCurrentRegion() == 72, "something reassigned GetCurrentRegion — it must never be touched")
+    assert(_G.GetLocale == nil, "something reassigned GetLocale — it must never be touched")
+    assert(UnitFactionGroup("player") == nil, "something reassigned UnitFactionGroup — it must never be touched")
 
     local lines, release = capturePrint()
     local db = fj.Database.initialize()
@@ -114,8 +116,30 @@ local function test_initialize_is_safe_when_acedb_is_missing()
     clearClient()
 end
 
+local function test_acedb_survives_a_nil_realm_and_a_nil_character_name()
+    hostileClient()
+    _G.GetRealmName = function() return nil end
+    _G.UnitName = function() return nil end
+    local ns = {}
+    local function run(path)
+        local chunk, err = loadfile(path)
+        assert(chunk, "could not load " .. path .. ": " .. tostring(err))
+        chunk("FieldJournal", ns)
+    end
+    dofile("Libs/LibStub/LibStub.lua")
+    dofile("Libs/AceDB-3.0/AceDB-3.0.lua")
+    run("Core/Bootstrap.lua")
+    run("Core/Database.lua")
+    local lines, release = capturePrint()
+    local db = ns.Database.initialize()
+    release()
+    assert(db ~= nil, "initialize returned nil with a nil realm/character name: " .. tostring(ns.databaseError))
+    clearClient()
+end
+
 return {
     test_acedb_initializes_on_a_client_with_a_broken_region = test_acedb_initializes_on_a_client_with_a_broken_region,
     test_defaults_populate_the_character_section = test_defaults_populate_the_character_section,
     test_initialize_is_safe_when_acedb_is_missing = test_initialize_is_safe_when_acedb_is_missing,
+    test_acedb_survives_a_nil_realm_and_a_nil_character_name = test_acedb_survives_a_nil_realm_and_a_nil_character_name,
 }

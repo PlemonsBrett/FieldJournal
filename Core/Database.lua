@@ -1,15 +1,12 @@
 -- Field Journal: AceDB-3.0 setup, schema version and per-character defaults.
 --
--- Loads early in the Core/ block, immediately after the files that must run
--- first (Bootstrap's frame/event setup has no dependency on this file), before
--- any Data/ or UI/ file. This is the first place that can undo Core/ClientCompat.lua's
--- temporary global wrappers. Do that before anything else: AceDB-3.0 captured
--- everything it needed while its own file was loading, so nothing below depends
--- on the wrappers staying.
+-- Loads early in the Core/ block, after the Libs/ block and after Bootstrap's
+-- frame/event setup, before any Data/ or UI/ file. AceDB-3.0's own file-load-time
+-- crash on this client (see the patch comment in Libs/AceDB-3.0/AceDB-3.0.lua) is
+-- fixed directly in that vendored file, so this file has no global-restoration
+-- timing to coordinate.
 
 local FieldJournal = select(2, ...)
-
-if FieldJournal.ClientCompat then FieldJournal.ClientCompat.restore() end
 
 local Database = {}
 FieldJournal.Database = Database
