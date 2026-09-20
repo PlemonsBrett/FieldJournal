@@ -12,6 +12,7 @@ Libs/AceSerializer-3.0/AceSerializer-3.0.lua
 Libs/LibDeflate/LibDeflate.lua
 QuestTextPack.lua
 Core/Bootstrap.lua
+Core/SlashCommands.lua
 Data/QuestLog.lua
 Data/Bestiary.lua
 Data/Diary.lua
@@ -19,4 +20,3 @@ Data/Crafting.lua
 UI/Widgets.lua
 UI/NoteEditor.lua
 UI/Window.lua
-FieldJournal.lua

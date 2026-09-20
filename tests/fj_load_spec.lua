@@ -4,6 +4,7 @@ local env = dofile("tests/wow_env.lua")
 -- new module here so the suite always loads exactly what the client loads.
 local MODULES = {
     "Core/Bootstrap.lua",
+    "Core/SlashCommands.lua",
     "Data/QuestLog.lua",
     "Data/Bestiary.lua",
     "Data/Diary.lua",
@@ -11,7 +12,6 @@ local MODULES = {
     "UI/Widgets.lua",
     "UI/NoteEditor.lua",
     "UI/Window.lua",
-    "FieldJournal.lua",
 }
 
 local function assertFunctions(tbl, label, names)
@@ -63,7 +63,16 @@ local function test_refresh_if_shown_is_safe_without_a_window()
     fj.UI.RefreshIfShown()
 end
 
+local function test_slash_commands_are_registered()
+    local fj = env.loadModules(MODULES)
+    assert(_G.SLASH_FIELDJOURNAL1 == "/fieldjournal", "the long slash command changed")
+    assert(_G.SLASH_FIELDJOURNAL2 == "/fj", "the short slash command changed")
+    assert(type(_G.SlashCmdList.FIELDJOURNAL) == "function", "the slash handler was not registered")
+    assert(fj ~= nil, "the namespace must still be returned")
+end
+
 return {
     test_all_modules_load_into_one_namespace = test_all_modules_load_into_one_namespace,
     test_refresh_if_shown_is_safe_without_a_window = test_refresh_if_shown_is_safe_without_a_window,
+    test_slash_commands_are_registered = test_slash_commands_are_registered,
 }

@@ -1,10 +1,8 @@
-local addonName, FieldJournal = ...
+-- Field Journal: the /fj and /fieldjournal command handler.
+
+local FieldJournal = select(2, ...)
 
 local clean = FieldJournal.clean
-local addEntry = FieldJournal.QuestLog.addEntry
-local findUniqueQuestMention = FieldJournal.QuestLog.findUniqueQuestMention
-local initializeCharacter = FieldJournal.initializeCharacter
-local createWindow = FieldJournal.UI.createWindow
 
 SLASH_FIELDJOURNAL1 = "/fieldjournal"
 SLASH_FIELDJOURNAL2 = "/fj"
@@ -12,13 +10,13 @@ SlashCmdList.FIELDJOURNAL = function(message)
     local command, remainder = (message or ""):match("^(%S+)%s*(.-)%s*$")
     if command == "repair" then
         FieldJournal.loadedCharacterKey = nil
-        initializeCharacter()
+        FieldJournal.initializeCharacter()
     FieldJournal.UI.RefreshIfShown()
         print("Field Journal: restored the bestiary index from saved encounters where needed.")
         return
     end
     if command == "status" then
-        initializeCharacter()
+        FieldJournal.initializeCharacter()
         local function listens(eventName)
             return FieldJournal.frame.IsEventRegistered and FieldJournal.frame:IsEventRegistered(eventName) and "on" or "off"
         end
@@ -42,13 +40,13 @@ SlashCmdList.FIELDJOURNAL = function(message)
             return
         end
         if command == "remember" then
-            addEntry("speech", nil, "Remembered", title, body, "", findUniqueQuestMention(title))
+            FieldJournal.QuestLog.addEntry("speech", nil, "Remembered", title, body, "", FieldJournal.QuestLog.findUniqueQuestMention(title))
         else
-            addEntry("note", nil, "Note", title, body, "", findUniqueQuestMention(title))
+            FieldJournal.QuestLog.addEntry("note", nil, "Note", title, body, "", FieldJournal.QuestLog.findUniqueQuestMention(title))
         end
         print("Field Journal: recorded " .. clean(title) .. ".")
         return
     end
-    if not FieldJournal.UI.window then createWindow() end
+    if not FieldJournal.UI.window then FieldJournal.UI.createWindow() end
     if FieldJournal.UI.window:IsShown() then FieldJournal.UI.window:Hide() else FieldJournal.UI.window:Show() end
 end
