@@ -132,36 +132,37 @@ end
 
 local function test_install_is_idempotent()
     env.install()
-    _G.GetRealmName = function() return "Home" end
+    local raw = function() return "Home" end
+    _G.GetRealmName = raw
     local fj = loadShim()
     -- Install has already been called once when the shim loaded.
     -- Call it again to verify it doesn't double-wrap.
     fj.ClientCompat.install()
-    assert(GetRealmName() == "Home", "the second install() must not change the wrapper's behavior")
-    -- If install() did double-wrap, restore() would only undo one layer,
-    -- leaving the wrapper in place. Calling it three times would fail or misbehave.
+    -- restore() must hand back the exact original function reference, not a wrapper.
+    -- If a second install() captured the already-installed wrapper as "original",
+    -- restore() would put that wrapper back, and this assertion would fail.
     fj.ClientCompat.restore()
-    fj.ClientCompat.install()
-    fj.ClientCompat.install()
-    fj.ClientCompat.restore()
-    assert(GetRealmName() == "Home", "multiple install/restore cycles must work correctly")
+    assert(_G.GetRealmName == raw, "restore() must return the exact original function after double install()")
     _G.GetRealmName = nil
 end
 
 local function test_restore_is_idempotent()
     env.install()
-    _G.GetLocale = function() return "frFR" end
+    local raw = function() return "frFR" end
+    _G.GetLocale = raw
     local fj = loadShim()
     fj.ClientCompat.restore()
-    assert(GetLocale() == "frFR", "restore must give the client its own function back")
+    assert(_G.GetLocale == raw, "restore must return the exact original function")
     -- Call restore again - should be safe and do nothing
     fj.ClientCompat.restore()
-    assert(GetLocale() == "frFR", "calling restore() twice must not error")
+    assert(_G.GetLocale == raw, "calling restore() twice must still return the original function")
     _G.GetLocale = nil
 end
 
 local function test_restore_before_install_is_safe()
     env.install()
+    local raw = function() return "TestRealm" end
+    _G.GetRealmName = raw
     -- Create a fresh namespace that won't auto-call install()
     local ns = {}
     local chunk, err = loadfile("Core/ClientCompat.lua")
@@ -169,9 +170,11 @@ local function test_restore_before_install_is_safe()
     chunk("FieldJournal", ns)
     -- The module will have called install() when it loaded, so restore it first
     ns.ClientCompat.restore()
-    -- Now call restore again before any new install() - should not error
+    assert(_G.GetRealmName == raw, "first restore() must return the original function")
+    -- Now call restore again before any new install() - should not error and not change anything
     ns.ClientCompat.restore()
-    assert(true, "calling restore() before install() must be safe")
+    assert(_G.GetRealmName == raw, "calling restore() twice must not error and leave globals unchanged")
+    _G.GetRealmName = nil
 end
 
 return {
