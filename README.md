@@ -28,7 +28,7 @@ This follows a phased resilience plan (`docs/superpowers/specs/2026-09-19-phase1
 - **Rotating self-heal backups** — an automatic snapshot of each character's data taken at login, capped and pruned, with a redesigned `/fj repair` that can restore from it. Replaces the old hand-maintained `FieldJournalRecoveryDB` snapshot pattern entirely.
 - **Export / Import** — a manual `/fj export` / `/fj import` safety valve so players can back up or transfer their own data without touching SavedVariables files directly.
 - **Edit-safety guarantees** — a per-record `edited` flag so a manual correction (via the note editor) is never silently overwritten by auto-regeneration, a merge, or a backup restore.
-- **Repository polish** — CONTRIBUTING notes and a CLAUDE.md for future coding-agent sessions, once the data layer above has proven stable.
+- **Repository polish** — a CLAUDE.md for future coding-agent sessions, once the data layer above has proven stable. (Contribution guidelines now live in [CONTRIBUTING.md](CONTRIBUTING.md).)
 - **Phase 2 (UI/UX) and Phase 3 (visual polish, art)** — exploratory, no design work started; see the open issues.
 
 None of this is scheduled; it lands as time allows.
@@ -47,7 +47,7 @@ Merging to `main` prepares a **draft** GitHub Release. It does not upload to Wag
 
 1. Tests must pass.
 2. The pipeline chooses the next version (keeps `FieldJournal.toc` on the first release; uses a TOC bump if you already changed it; otherwise increments the patch and keeps any `-beta` / `-alpha` suffix).
-3. It prepends that version to `CHANGELOG.md` using GitHub's generated notes for the commits since the last `v*` tag, commits `chore: prepare release <version>` to `main`, and opens a draft release with the packaged zip attached.
+3. It prepends that version to `CHANGELOG.md` using [git-cliff](https://git-cliff.org/) (`cliff.toml`) to group the Conventional Commits since the last `v*` tag, commits `chore: prepare release <version>` to `main`, and opens a draft release with the packaged zip attached.
 
 Publishing that draft (GitHub → Releases → Edit draft → Publish) is what uploads the Forever zip (`Interface: 16001` → Wago patch `1.60.1`) to Wago project `bGoyor60`. The publish job fails if repository secret `WAGO_API_KEY` is missing. Local zips can still be built with `tools/package.ps1`.
 

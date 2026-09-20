@@ -13,8 +13,14 @@ if ! command -v "$lua_bin" >/dev/null 2>&1; then
   lua_bin="lua"
 fi
 
-if [ -z "${GITHUB_REPOSITORY:-}" ] || [ -z "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]; then
-  echo "GITHUB_REPOSITORY and GH_TOKEN/GITHUB_TOKEN are required." >&2
+if [ -z "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]; then
+  echo "GH_TOKEN/GITHUB_TOKEN is required." >&2
+  exit 1
+fi
+
+cliff_bin="${GIT_CLIFF_BIN:-git-cliff}"
+if ! command -v "$cliff_bin" >/dev/null 2>&1; then
+  echo "git-cliff binary not found (set GIT_CLIFF_BIN or install git-cliff)." >&2
   exit 1
 fi
 
@@ -49,16 +55,15 @@ if git rev-parse "refs/tags/v${version}" >/dev/null 2>&1; then
   exit 1
 fi
 
-notes_args=(-f "tag_name=v${version}" -f "target_commitish=$(git rev-parse HEAD)")
-if [ -n "$last_tag" ]; then
-  notes_args+=(-f "previous_tag_name=${last_tag}")
-fi
-
 notes_file="$(mktemp)"
 trap 'rm -f "$notes_file"' EXIT
-gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" "${notes_args[@]}" --jq .body > "$notes_file"
+if [ -n "$last_tag" ]; then
+  "$cliff_bin" --config cliff.toml "${last_tag}..HEAD" > "$notes_file"
+else
+  "$cliff_bin" --config cliff.toml > "$notes_file"
+fi
 if [ ! -s "$notes_file" ]; then
-  echo "GitHub generated empty release notes." >&2
+  echo "git-cliff produced no changelog entries for this release (only chore/build/ci/test commits since ${last_tag:-the start})." >&2
   exit 1
 fi
 
