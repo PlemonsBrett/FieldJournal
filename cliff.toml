@@ -1,0 +1,40 @@
+# git-cliff config for FieldJournal's release-prep pipeline.
+# Generates only the notes BODY for the version being released — no version
+# heading, no changelog file rewriting. tools/prepare_release.sh calls this
+# with a `<last-tag>..HEAD` range and prepends the version heading itself via
+# tools/release_version.lua, so keep `header`/`footer` empty here.
+[changelog]
+header = ""
+footer = ""
+trim = true
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group }}
+{% for commit in commits %}
+- {{ commit.message | upper_first | trim }}
+{%- endfor %}
+
+{% endfor %}
+"""
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+protect_breaking_commits = false
+sort_commits = "oldest"
+tag_pattern = "v[0-9]*"
+
+commit_parsers = [
+  { message = "^chore: prepare release", skip = true },
+  { message = "^feat", group = "Added" },
+  { message = "^fix", group = "Fixed" },
+  { message = "^refactor", group = "Changed" },
+  { message = "^perf", group = "Performance" },
+  { message = "^docs", group = "Documentation" },
+  { message = "^test", skip = true },
+  { message = "^build", skip = true },
+  { message = "^ci", skip = true },
+  { message = "^chore", skip = true },
+  { message = "^style", skip = true },
+]

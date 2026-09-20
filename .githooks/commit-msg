@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Enforces Conventional Commits so tools/prepare_release.sh's git-cliff
+# changelog (cliff.toml) can categorize every commit correctly.
+# Install once per clone: git config core.hooksPath .githooks
+set -euo pipefail
+
+msg_file="$1"
+subject="$(head -n 1 "$msg_file")"
+
+# Git-generated merge/revert subjects aren't hand-typed; don't block them.
+case "$subject" in
+  "Merge "*|"Revert "*) exit 0 ;;
+esac
+
+pattern='^(feat|fix|refactor|perf|docs|test|build|ci|chore|style)(\([a-zA-Z0-9_.-]+\))?!?: .+'
+if ! [[ "$subject" =~ $pattern ]]; then
+  echo "error: commit message does not follow Conventional Commits." >&2
+  echo "  got:      $subject" >&2
+  echo "  expected: <type>[(scope)][!]: <description>" >&2
+  echo "  types:    feat fix refactor perf docs test build ci chore style" >&2
+  exit 1
+fi

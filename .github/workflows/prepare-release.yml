@@ -26,11 +26,21 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT }}
 
       - name: Install Lua 5.1
         run: |
           sudo apt-get update
           sudo apt-get install -y lua5.1
+
+      - name: Install git-cliff
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/git-cliff.deb \
+            "https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/git-cliff-${GIT_CLIFF_VERSION}.deb"
+          sudo dpkg -i /tmp/git-cliff.deb
+        env:
+          GIT_CLIFF_VERSION: "2.14.2"
 
       - name: Run test suite
         run: lua5.1 tests/run_tests.lua
@@ -38,8 +48,7 @@ jobs:
       - name: Prepare changelog, version, and draft
         id: prep
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
           LUA_BIN: lua5.1
         run: bash tools/prepare_release.sh
 
