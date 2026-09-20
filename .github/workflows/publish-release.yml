@@ -1,10 +1,22 @@
-# Runs only when a GitHub Release draft is published. Rebuilds the Forever zip
+# Runs when a GitHub Release draft is published. Rebuilds the Forever zip
 # from the release tag and uploads it to Wago.io project bGoyor60.
+#
+# GitHub occasionally fails to deliver the `release: published` event to
+# Actions (observed in practice; GitHub's own repo event log showed no
+# ReleaseEvent at all for the affected publishes, so it's not something this
+# workflow can detect or retry on its own). The workflow_dispatch trigger
+# below is the fallback: run it manually with the release tag if a publish
+# doesn't show up under Actions within a minute or two.
 name: Publish to Wago.io
 
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (e.g. v0.8.1-beta) — use when the release event didn't fire automatically"
+        required: true
 
 permissions:
   contents: write
@@ -14,11 +26,32 @@ jobs:
     name: Upload release to Wago.io
     runs-on: ubuntu-latest
     steps:
+      - name: Resolve release tag and notes
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ github.event.release.tag_name }}"
+          if [ -z "$tag" ]; then
+            tag="${{ inputs.tag }}"
+          fi
+          if [ -z "$tag" ]; then
+            echo "No release tag available from the event or workflow_dispatch input." >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          {
+            echo "body<<RELEASE_BODY_EOF"
+            gh release view "$tag" --json body -q .body
+            echo "RELEASE_BODY_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Checkout release tag
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ steps.release.outputs.tag }}
 
       - name: Install Lua 5.1
         run: |
@@ -47,8 +80,8 @@ jobs:
         env:
           WAGO_API_KEY: ${{ secrets.WAGO_API_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          RELEASE_BODY: ${{ github.event.release.body }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_BODY: ${{ steps.release.outputs.body }}
         run: |
           set -euo pipefail
           zip_path="$(find .release -maxdepth 1 -type f -name '*.zip' ! -name '*nolib*' | head -n 1)"
