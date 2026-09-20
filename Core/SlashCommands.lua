@@ -24,13 +24,24 @@ SlashCmdList.FIELDJOURNAL = function(message)
         for _ in pairs(FieldJournal.bestiary or {}) do species = species + 1 end
         local recoveries = (FieldJournalRecoveryDB and 1 or 0)
             + (FieldJournalRecoveryDB2 and 1 or 0) + (FieldJournalRecoveryDB3 and 1 or 0)
+        local charData = FieldJournal.charData
+        local schema = charData and charData.schemaVersion or 0
+        local migrated = (charData and charData.legacyMigrated) and "yes" or "no"
         print("Field Journal: PARTY_KILL " .. listens("PARTY_KILL")
             .. ", UNIT_DIED " .. listens("UNIT_DIED")
             .. ", encounters " .. tostring(FieldJournal.encounters and #FieldJournal.encounters or 0)
             .. ", bestiary species " .. species
             .. ", craft events " .. tostring(FieldJournal.craftEvents and #FieldJournal.craftEvents or 0)
             .. ", recovery snapshots " .. recoveries
-            .. ", character " .. tostring(FieldJournal.loadedCharacterKey or "not loaded") .. ".")
+            .. ", character " .. tostring(FieldJournal.loadedCharacterKey or "not loaded")
+            .. ", schema v" .. tostring(schema)
+            .. ", legacy migration " .. migrated .. ".")
+        if FieldJournal.databaseError then
+            print("Field Journal: database error - " .. tostring(FieldJournal.databaseError))
+        end
+        if FieldJournal.migrationError then
+            print("Field Journal: migration error - " .. tostring(FieldJournal.migrationError))
+        end
         return
     end
     if command == "remember" or command == "note" then
