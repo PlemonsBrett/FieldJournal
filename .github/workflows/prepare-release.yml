@@ -1,0 +1,75 @@
+# After a merge to main: run tests, update CHANGELOG.md + TOC version, and
+# open a GitHub Release draft. Publishing that draft triggers publish-release.yml
+# which is the only path that uploads to Wago.io.
+name: Prepare release draft
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: prepare-release-main
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: Changelog and draft release
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore: prepare release') }}
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.prep.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1
+
+      - name: Run test suite
+        run: lua5.1 tests/run_tests.lua
+
+      - name: Prepare changelog, version, and draft
+        id: prep
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          LUA_BIN: lua5.1
+        run: bash tools/prepare_release.sh
+
+  package-draft:
+    name: Attach zip to draft
+    needs: prepare
+    if: ${{ needs.prepare.outputs.version != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout updated main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Package draft zip
+        uses: BigWigsMods/packager@v2
+        with:
+          args: -d -g forever
+
+      - name: Attach zip to the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          zip_path="$(find .release -maxdepth 1 -type f -name '*.zip' ! -name '*nolib*' | head -n 1)"
+          if [ -z "$zip_path" ]; then
+            echo "Packager did not produce a zip in .release/" >&2
+            exit 1
+          fi
+          gh release upload "v${VERSION}" "$zip_path" --clobber
+          echo "Attached ${zip_path} to draft v${VERSION}"

@@ -1,0 +1,64 @@
+# Runs only when a GitHub Release draft is published. Rebuilds the Forever zip
+# from the release tag and uploads it to Wago.io project bGoyor60.
+name: Publish to Wago.io
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Upload release to Wago.io
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1
+
+      - name: Run test suite
+        run: lua5.1 tests/run_tests.lua
+
+      - name: Require Wago API key
+        env:
+          WAGO_API_KEY: ${{ secrets.WAGO_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$WAGO_API_KEY" ]; then
+            echo "Repository secret WAGO_API_KEY is not set." >&2
+            exit 1
+          fi
+
+      - name: Package Forever zip
+        uses: BigWigsMods/packager@v2
+        with:
+          args: -d -g forever
+
+      - name: Upload zip to Wago.io
+        env:
+          WAGO_API_KEY: ${{ secrets.WAGO_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+        run: |
+          set -euo pipefail
+          zip_path="$(find .release -maxdepth 1 -type f -name '*.zip' ! -name '*nolib*' | head -n 1)"
+          if [ -z "$zip_path" ]; then
+            echo "Packager did not produce a zip in .release/" >&2
+            exit 1
+          fi
+          notes_file="$(mktemp)"
+          printenv RELEASE_BODY > "$notes_file"
+          label="${RELEASE_TAG#v}"
+          bash tools/publish_wago.sh "$zip_path" "$label" "$notes_file"
+          gh release upload "$RELEASE_TAG" "$zip_path" --clobber
+

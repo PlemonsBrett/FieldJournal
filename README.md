@@ -41,18 +41,15 @@ Copy the `FieldJournal` folder into the beta client's `Interface/AddOns` folder.
 
 ## Continuous integration and Wago releases
 
-GitHub Actions runs the Lua 5.1 suite (`tests/run_tests.lua`) on every push to `main` and every pull request, then dry-runs the [BigWigs packager](https://github.com/BigWigsMods/packager) so the zip matches what Wago.io will receive. Tagged releases (`v*`) re-run the tests, build the Forever-flavor zip (`Interface: 16001` → Wago patch `1.60.1`), attach it to a GitHub Release, and upload it to Wago.io.
+GitHub Actions runs the Lua 5.1 suite (`tests/run_tests.lua`) on every pull request and push to `main`, and dry-runs the [BigWigs packager](https://github.com/BigWigsMods/packager) so a bad zip fails before anyone publishes it.
 
-The tag must match `## Version` in `FieldJournal.toc` with a leading `v`: version `0.8.0-beta` is released by pushing `v0.8.0-beta`.
+Merging to `main` prepares a **draft** GitHub Release. It does not upload to Wago.io yet:
 
-The Wago project ID is already in `FieldJournal.toc` (`## X-Wago-ID: bGoyor60`). The release workflow reads repository secret `WAGO_API_KEY` and passes it to the packager as `WAGO_API_TOKEN`. Push a matching version tag to publish:
+1. Tests must pass.
+2. The pipeline chooses the next version (keeps `FieldJournal.toc` on the first release; uses a TOC bump if you already changed it; otherwise increments the patch and keeps any `-beta` / `-alpha` suffix).
+3. It prepends that version to `CHANGELOG.md` using GitHub's generated notes for the commits since the last `v*` tag, commits `chore: prepare release <version>` to `main`, and opens a draft release with the packaged zip attached.
 
-```
-git tag v0.8.0-beta
-git push origin v0.8.0-beta
-```
-
-A tagged release fails if `WAGO_API_KEY` is missing. Local zips can still be built with `tools/package.ps1`.
+Publishing that draft (GitHub → Releases → Edit draft → Publish) is what uploads the Forever zip (`Interface: 16001` → Wago patch `1.60.1`) to Wago project `bGoyor60`. The publish job fails if repository secret `WAGO_API_KEY` is missing. Local zips can still be built with `tools/package.ps1`.
 
 ## Quick validation
 
