@@ -233,8 +233,20 @@ FieldJournal.frame:SetScript("OnEvent", function(_, event, ...)
         if FieldJournal.DevTools and FieldJournal.DevTools.initialize then FieldJournal.DevTools.initialize() end
     elseif event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
         initializeCharacter()
-        if event == "PLAYER_LOGIN" and not partyKillRegistered and not unitDiedRegistered then
-            print("Field Journal: no kill event is available on this client; encounter recording is unavailable.")
+        if event == "PLAYER_LOGIN" then
+            -- One rotating snapshot per UI load. PLAYER_ENTERING_WORLD shares
+            -- this branch but fires on every zone change, instance entry and
+            -- resurrection, which would rotate the five-slot ring away inside a
+            -- single play session -- so the snapshot is deliberately inside the
+            -- PLAYER_LOGIN-only guard. It also runs AFTER initializeCharacter(),
+            -- so FieldJournal.charData exists and the bestiary index has already
+            -- been reconciled against the encounter log: the snapshot records
+            -- the settled state, not a half-loaded one. Core/Backup.lua decides
+            -- for itself whether the snapshot is worth taking, and never throws.
+            if FieldJournal.Backup then FieldJournal.Backup.capture(FieldJournal.charData) end
+            if not partyKillRegistered and not unitDiedRegistered then
+                print("Field Journal: no kill event is available on this client; encounter recording is unavailable.")
+            end
         end
     elseif event == "QUEST_DETAIL" then
         FieldJournal.QuestLog.captureQuest("Offered")

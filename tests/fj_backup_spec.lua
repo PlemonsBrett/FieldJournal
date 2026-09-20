@@ -530,6 +530,56 @@ local function test_repair_is_safe_with_an_empty_ring_and_a_missing_database()
     assert(#lines == 1, "exactly one chat line must explain a missing database, got " .. #lines)
 end
 
+local function fireEvent(fj, event, ...)
+    local handler = fj.frame:GetScript("OnEvent")
+    assert(type(handler) == "function", "Core/Bootstrap.lua did not register an OnEvent handler")
+    handler(fj.frame, event, ...)
+end
+
+local function test_player_login_takes_a_snapshot()
+    local fj = load()
+    local charData = freshChar()
+    charData.entries["quest:1"] = {key = "quest:1", kind = "quest", questID = 1, body = "one", order = 1}
+    fj.db = {char = charData}
+
+    quietly(fireEvent, fj, "PLAYER_LOGIN")
+
+    assert(#charData.backups == 1,
+        "PLAYER_LOGIN must take exactly one snapshot, got " .. #charData.backups)
+    assert(charData.backups[1].counts.entries == 1,
+        "the snapshot must carry this character's real counts")
+    assert(charData.backups[1].data.entries["quest:1"].body == "one",
+        "the snapshot must be taken after initializeCharacter has settled the data")
+end
+
+-- PLAYER_ENTERING_WORLD shares Core/Bootstrap.lua's branch with PLAYER_LOGIN
+-- but fires on every zone change, instance entry and resurrection. Snapshotting
+-- there would rotate the five-slot ring away inside a single play session.
+local function test_player_entering_world_does_not_take_a_snapshot()
+    local fj = load()
+    local charData = freshChar()
+    charData.entries["quest:1"] = {key = "quest:1", kind = "quest", questID = 1, body = "one", order = 1}
+    fj.db = {char = charData}
+
+    quietly(fireEvent, fj, "PLAYER_ENTERING_WORLD")
+    quietly(fireEvent, fj, "PLAYER_ENTERING_WORLD")
+    quietly(fireEvent, fj, "PLAYER_ENTERING_WORLD")
+
+    assert(#charData.backups == 0,
+        "a zone change must never touch the ring, got " .. #charData.backups .. " snapshots")
+end
+
+local function test_player_login_is_safe_when_the_database_failed()
+    local fj = load()
+    fj.db = nil
+    local lines = quietly(fireEvent, fj, "PLAYER_LOGIN")
+    assert(fj.charData == nil, "a failed database must leave charData nil")
+    for _, line in ipairs(lines) do
+        assert(not line:find("backup", 1, true),
+            "a degraded database must not add a backup complaint to the login spam: " .. line)
+    end
+end
+
 return {
     test_snapshot_data_is_a_deep_copy_without_the_backups_field = test_snapshot_data_is_a_deep_copy_without_the_backups_field,
     test_first_capture_prepends_a_snapshot_with_time_counts_and_data = test_first_capture_prepends_a_snapshot_with_time_counts_and_data,
@@ -549,6 +599,9 @@ return {
     test_repair_still_reports_a_genuine_placeholder_drop = test_repair_still_reports_a_genuine_placeholder_drop,
     test_repair_raises_next_order_above_every_restored_record = test_repair_raises_next_order_above_every_restored_record,
     test_repair_is_safe_with_an_empty_ring_and_a_missing_database = test_repair_is_safe_with_an_empty_ring_and_a_missing_database,
+    test_player_login_takes_a_snapshot = test_player_login_takes_a_snapshot,
+    test_player_entering_world_does_not_take_a_snapshot = test_player_entering_world_does_not_take_a_snapshot,
+    test_player_login_is_safe_when_the_database_failed = test_player_login_is_safe_when_the_database_failed,
     test_capture_refuses_when_entries_alone_is_wiped_to_zero = test_capture_refuses_when_entries_alone_is_wiped_to_zero,
     test_capture_is_safe_when_a_live_collection_field_is_malformed = test_capture_is_safe_when_a_live_collection_field_is_malformed,
     test_describe_is_safe_when_a_snapshot_is_malformed = test_describe_is_safe_when_a_snapshot_is_malformed,
