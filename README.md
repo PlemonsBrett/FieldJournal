@@ -1,5 +1,7 @@
 # Field Journal — WoW Forever beta
 
+> 🎨 **Artists wanted!** The journal already records map coordinates, creature IDs and item IDs for everything it sees — it just doesn't draw any of it yet. If you can make icons, portraits, or a journal-style map, see [issue #6](https://github.com/PlemonsBrett/FieldJournal/issues/6). No Lua required to contribute a mockup or asset set.
+
 Open the journal with `/fj` or `/fieldjournal`. This version has four tabs:
 
 - **Quests** keeps the quest log text, observed NPC dialogue, readable notes, kills and picked up quest items in chronological margins. It links speech from a recent quest giver when the speaker and location match one unambiguous quest. Previous quest stages and completed objectives are crossed out.
@@ -21,12 +23,13 @@ There is currently no rotating backup, no manual export/import, and no guarantee
 
 ## Roadmap
 
-This follows a phased resilience plan (`docs/superpowers/specs/2026-09-19-phase1-resilience-design.md` in this repo's history, not distributed with the addon). Remaining work:
+This follows a phased resilience plan (`docs/superpowers/specs/2026-09-19-phase1-resilience-design.md` in this repo's history, not distributed with the addon). See the [milestones](https://github.com/PlemonsBrett/FieldJournal/milestones) and [open issues](https://github.com/PlemonsBrett/FieldJournal/issues) for what's up for grabs — issues labeled [`good first issue`](https://github.com/PlemonsBrett/FieldJournal/labels/good%20first%20issue) are small, self-contained, and don't need deep addon-development experience.
 
 - **Rotating self-heal backups** — an automatic snapshot of each character's data taken at login, capped and pruned, with a redesigned `/fj repair` that can restore from it. Replaces the old hand-maintained `FieldJournalRecoveryDB` snapshot pattern entirely.
 - **Export / Import** — a manual `/fj export` / `/fj import` safety valve so players can back up or transfer their own data without touching SavedVariables files directly.
 - **Edit-safety guarantees** — a per-record `edited` flag so a manual correction (via the note editor) is never silently overwritten by auto-regeneration, a merge, or a backup restore.
 - **Repository polish** — CONTRIBUTING notes and a CLAUDE.md for future coding-agent sessions, once the data layer above has proven stable.
+- **Phase 2 (UI/UX) and Phase 3 (visual polish, art)** — exploratory, no design work started; see the open issues.
 
 None of this is scheduled; it lands as time allows.
 
