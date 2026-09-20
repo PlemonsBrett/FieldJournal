@@ -77,14 +77,22 @@ local COUNTED = {
 -- placeholder for that quest is deleted. A one- or two-entry drop between
 -- logins is therefore normal, and treating it as data loss would freeze the
 -- ring for a player who is simply re-walking quests they had only completed
--- before. Wholesale entry loss is still caught, by the "emptied" rule below.
+-- before. But `entries` is also the quest/conversation text -- the most
+-- valuable and least reconstructible collection, and the actual subject of
+-- every historical data-loss incident that motivated this file -- so a wipe
+-- to exactly zero is never tolerated, no matter how healthy the other four
+-- collections are. shouldCapture enforces that with an entries-specific
+-- zero-floor check (`live.entries == 0 and previous.entries > 0`), separate
+-- from and in addition to the all-five-collections-zero check below; either
+-- one alone is enough to return "emptied".
 local MONOTONIC = {"encounters", "diaryEvents", "craftEvents", "bestiary"}
 
 local REASON_TEXT = {
     shrunk = "this character has FEWER records than its most recent backup snapshot, "
         .. "so no new snapshot was taken and the existing ones are preserved. Run /fj repair.",
-    emptied = "this character's journal is empty but its most recent backup snapshot is not, "
-        .. "so no new snapshot was taken and the existing ones are preserved. Run /fj repair.",
+    emptied = "this character's journal (or its quest/conversation entries) is empty but its most "
+        .. "recent backup snapshot is not, so no new snapshot was taken and the existing ones are "
+        .. "preserved. Run /fj repair.",
 }
 
 -- Everything this file borrows lives on the shared namespace and is read at
@@ -142,18 +150,25 @@ function Backup.snapshotData(charData)
     return data
 end
 
---- Decides whether to add a snapshot to the ring. Returns ok, reason, where
---  reason is one of "unavailable", "first", "identical", "shrunk", "emptied",
---  "changed". Only the newest snapshot is compared against: if it is garbage,
---  the answer is "first" and a fresh good snapshot gets prepended in front of
---  it, which is the right recovery.
-function Backup.shouldCapture(charData)
-    local h = helpers()
-    if not h or type(charData) ~= "table" then return false, "unavailable" end
-
+-- The actual decision logic, factored out of Backup.shouldCapture so it can
+-- run inside a pcall (see below): FieldJournal.Migrations.counts() throws on
+-- a hand-edited SavedVariables file where a collection field is present but
+-- not a table (# and pairs() both raise on a non-table in Lua 5.1), and this
+-- file's own "nothing may throw" rule covers this decision exactly as it
+-- covers the write in performCapture.
+local function computeVerdict(charData, h)
     local ring = charData.backups
     if type(ring) ~= "table" then return true, "first" end
-    local previous = snapshotCounts(ring[1], h)
+
+    -- Walk from newest to oldest and use the first snapshot snapshotCounts
+    -- can actually parse as the baseline. Checking only ring[1] would let one
+    -- garbage newest snapshot silently disable the guard even when slots 2-5
+    -- hold perfectly good history to check against.
+    local previous
+    for index = 1, #ring do
+        previous = snapshotCounts(ring[index], h)
+        if previous then break end
+    end
     if not previous then return true, "first" end
 
     local live = h.counts(charData)
@@ -161,6 +176,12 @@ function Backup.shouldCapture(charData)
     for _, field in ipairs(MONOTONIC) do
         if live[field] < previous[field] then return false, "shrunk" end
     end
+
+    -- entries is excluded from MONOTONIC (see the comment above) so a one- or
+    -- two-record drop from normal `past:<id>` placeholder churn is tolerated,
+    -- but a wipe to exactly zero never is, regardless of how healthy the
+    -- other four collections are -- see the comment above MONOTONIC for why.
+    if live.entries == 0 and previous.entries > 0 then return false, "emptied" end
 
     local liveTotal, previousTotal, identical = 0, 0, true
     for _, counted in ipairs(COUNTED) do
@@ -173,6 +194,23 @@ function Backup.shouldCapture(charData)
     if liveTotal == 0 and previousTotal > 0 then return false, "emptied" end
     if identical then return false, "identical" end
     return true, "changed"
+end
+
+--- Decides whether to add a snapshot to the ring. Returns ok, reason, where
+--  reason is one of "unavailable", "first", "identical", "shrunk", "emptied",
+--  "changed". Walks the ring newest-to-oldest for the first parseable
+--  snapshot to use as a baseline (see computeVerdict); only answers "first"
+--  if no snapshot in the ring can be parsed at all, which is the right
+--  recovery. The whole computation runs inside a pcall so a malformed live
+--  collection can never escape this function as an uncaught error -- it
+--  degrades to "unavailable" instead.
+function Backup.shouldCapture(charData)
+    local h = helpers()
+    if not h or type(charData) ~= "table" then return false, "unavailable" end
+
+    local ok, taken, reason = pcall(computeVerdict, charData, h)
+    if not ok then return false, "unavailable" end
+    return taken, reason
 end
 
 local function performCapture(charData, h)
@@ -210,25 +248,21 @@ function Backup.capture(charData)
     return true, reason
 end
 
---- Chat-ready lines describing the ring, newest first. Returned as a table
---  rather than printed so /fj backup, /fj status and the test suite can all
---  read the same description without capturing print.
-function Backup.describe(charData)
-    local lines = {}
-    local h = helpers()
-    if not h or type(charData) ~= "table" then
-        lines[1] = "Field Journal: the database is not available, so there are no backup snapshots."
-        return lines
-    end
+local UNAVAILABLE_DESCRIPTION = "Field Journal: the database is not available, so there are no backup snapshots."
 
+-- The actual line-building logic, factored out of Backup.describe so it can
+-- run inside a pcall. snapshotCounts can fall back to
+-- FieldJournal.Migrations.counts(snapshot.data), which throws on the same
+-- malformed-collection shapes computeVerdict above guards against -- a
+-- snapshot's own stored data can be just as damaged as live data.
+local function computeDescription(charData, h)
     local ring = type(charData.backups) == "table" and charData.backups or {}
     if #ring == 0 then
-        lines[1] = "Field Journal: no backup snapshots yet. One is taken automatically at each login."
-        return lines
+        return {"Field Journal: no backup snapshots yet. One is taken automatically at each login."}
     end
 
-    lines[1] = "Field Journal: " .. #ring .. " of " .. Backup.SNAPSHOT_LIMIT
-        .. " backup snapshots, newest first."
+    local lines = {"Field Journal: " .. #ring .. " of " .. Backup.SNAPSHOT_LIMIT
+        .. " backup snapshots, newest first."}
     for index = 1, #ring do
         local snapshot = ring[index]
         local tally = snapshotCounts(snapshot, h)
@@ -237,5 +271,21 @@ function Backup.describe(charData)
             .. (at and date("%Y-%m-%d %H:%M", at) or "unknown time")
             .. " - " .. (tally and h.countText(tally) or "unreadable snapshot")
     end
+    return lines
+end
+
+--- Chat-ready lines describing the ring, newest first. Returned as a table
+--  rather than printed so /fj backup, /fj status and the test suite can all
+--  read the same description without capturing print. Never throws: a
+--  malformed snapshot degrades to the same "database is not available" line
+--  used when there is no database at all, rather than an uncaught error.
+function Backup.describe(charData)
+    local h = helpers()
+    if not h or type(charData) ~= "table" then
+        return {UNAVAILABLE_DESCRIPTION}
+    end
+
+    local ok, lines = pcall(computeDescription, charData, h)
+    if not ok then return {UNAVAILABLE_DESCRIPTION} end
     return lines
 end

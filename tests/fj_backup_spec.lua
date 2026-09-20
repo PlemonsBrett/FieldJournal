@@ -216,6 +216,112 @@ local function test_capture_is_safe_without_a_database()
         "a degraded database already prints its own error; capture must not pile on, got " .. #lines)
 end
 
+-- Review finding 1 (Critical): entries is excluded from the MONOTONIC list so
+-- normal past:<id> placeholder churn doesn't freeze the ring, but a wipe of
+-- entries to exactly zero must never be waved through just because the other
+-- four collections are healthy and the five-collection total is still well
+-- above zero.
+local function test_capture_refuses_when_entries_alone_is_wiped_to_zero()
+    local fj = load()
+    local charData = freshChar()
+    for index = 1, 300 do
+        charData.entries["quest:" .. index] = {key = "quest:" .. index, body = "body " .. index, order = index}
+    end
+    charData.encounters[1] = {guid = "g1", name = "Wolf", seenAt = 1}
+    charData.diaryEvents[1] = {key = "diary1", seenAt = 1}
+    charData.craftEvents[1] = {key = "craft1", seenAt = 1}
+    charData.bestiary["wolf"] = {name = "Wolf", kills = 1, order = 1}
+    fj.Backup.capture(charData)
+
+    -- entries wiped to zero; the other four collections are untouched.
+    charData.entries = {}
+
+    local lines, release = capturePrint()
+    local taken, reason = fj.Backup.capture(charData)
+    release()
+    assert(taken == false,
+        "wiping entries to zero must never rotate the ring, even with the other four collections healthy")
+    assert(reason == "emptied", "expected reason 'emptied', got " .. tostring(reason))
+    assert(#charData.backups == 1, "the good snapshot must still be in the ring")
+    assert(charData.backups[1].counts.entries == 300, "the good snapshot must be untouched")
+    assert(table.concat(lines, "\n"):find("/fj repair", 1, true),
+        "the warning must point the player at /fj repair, got:\n" .. table.concat(lines, "\n"))
+end
+
+-- Review finding 2 (Important): shouldCapture must not throw when the live
+-- data is malformed (the shape a hand-edited SavedVariables file produces --
+-- a collection field present but not a table). Migrations.counts() calls
+-- pairs(charData.entries or {}), and pairs() raises on ANY non-table
+-- argument, so an entries field holding a plain string reproduces exactly
+-- that crash and exercises the pcall wrapped around shouldCapture's body.
+local function test_capture_is_safe_when_a_live_collection_field_is_malformed()
+    local fj = load()
+    local charData = freshChar()
+    charData.encounters[1] = {guid = "g1", name = "Wolf", seenAt = 1}
+    fj.Backup.capture(charData)
+
+    charData.entries = "corrupted"
+
+    local lines, release = capturePrint()
+    local taken, reason = fj.Backup.capture(charData)
+    release()
+    assert(taken == false, "capture must not throw when a live collection field is malformed")
+    assert(reason == "unavailable", "expected reason 'unavailable', got " .. tostring(reason))
+    assert(#charData.backups == 1, "the ring must be untouched")
+    assert(#lines == 0, "an unavailable verdict must not print anything, got " .. #lines .. " lines")
+end
+
+-- Review finding 2 (Important), the describe() half: a snapshot's own stored
+-- data can be just as malformed as live data (a partially written entry), and
+-- snapshotCounts falls back to Migrations.counts(snapshot.data) in that case,
+-- which raises on the same shape (pairs() on a non-table entries field).
+-- describe() must degrade, not throw.
+local function test_describe_is_safe_when_a_snapshot_is_malformed()
+    local fj = load()
+    local charData = freshChar()
+    charData.encounters[1] = {guid = "g1", name = "Wolf", seenAt = 1}
+    fj.Backup.capture(charData)
+
+    charData.backups[1].counts = nil
+    charData.backups[1].data.entries = "corrupted"
+
+    local ok, lines = pcall(fj.Backup.describe, charData)
+    assert(ok, "describe must not throw when a snapshot's stored data is malformed")
+    assert(type(lines) == "table" and #lines >= 1, "describe must still return chat-ready lines")
+end
+
+-- Review finding 3 (Important): shouldCapture must not stop at ring[1]. If the
+-- newest snapshot is unreadable but an older one is good, a shrink must still
+-- be caught against that older, readable baseline.
+local function test_capture_falls_back_to_the_first_readable_snapshot_when_the_newest_is_garbage()
+    local fj = load()
+    local charData = freshChar()
+    charData.encounters[1] = {guid = "g1", name = "Wolf", seenAt = 1}
+    charData.encounters[2] = {guid = "g2", name = "Bear", seenAt = 2}
+    fj.Backup.capture(charData)
+
+    charData.encounters[3] = {guid = "g3", name = "Boar", seenAt = 3}
+    fj.Backup.capture(charData)
+    assert(#charData.backups == 2, "setup: two snapshots should exist before corrupting the newest")
+
+    -- Corrupt the newest snapshot (ring[1]) in place -- the signature of a
+    -- hand-edited or partially-written saved-variables entry.
+    charData.backups[1] = {at = 999, counts = "not a table", data = "also not a table"}
+
+    -- Shrink relative to ring[2]'s good baseline (encounters == 2): drop to 0.
+    table.remove(charData.encounters)
+    table.remove(charData.encounters)
+
+    local lines, release = capturePrint()
+    local taken, reason = fj.Backup.capture(charData)
+    release()
+    assert(taken == false, "a shrunk journal must still be caught even when the newest snapshot is unreadable")
+    assert(reason == "shrunk", "expected reason 'shrunk' (checked against ring[2]), got " .. tostring(reason))
+    assert(#charData.backups == 2, "the ring must be untouched -- neither slot should have rotated")
+    assert(table.concat(lines, "\n"):find("/fj repair", 1, true),
+        "the warning must point the player at /fj repair, got:\n" .. table.concat(lines, "\n"))
+end
+
 return {
     test_snapshot_data_is_a_deep_copy_without_the_backups_field = test_snapshot_data_is_a_deep_copy_without_the_backups_field,
     test_first_capture_prepends_a_snapshot_with_time_counts_and_data = test_first_capture_prepends_a_snapshot_with_time_counts_and_data,
@@ -226,4 +332,8 @@ return {
     test_capture_refuses_when_the_journal_is_empty_but_the_ring_is_not = test_capture_refuses_when_the_journal_is_empty_but_the_ring_is_not,
     test_capture_tolerates_a_superseded_placeholder_entry_disappearing = test_capture_tolerates_a_superseded_placeholder_entry_disappearing,
     test_capture_is_safe_without_a_database = test_capture_is_safe_without_a_database,
+    test_capture_refuses_when_entries_alone_is_wiped_to_zero = test_capture_refuses_when_entries_alone_is_wiped_to_zero,
+    test_capture_is_safe_when_a_live_collection_field_is_malformed = test_capture_is_safe_when_a_live_collection_field_is_malformed,
+    test_describe_is_safe_when_a_snapshot_is_malformed = test_describe_is_safe_when_a_snapshot_is_malformed,
+    test_capture_falls_back_to_the_first_readable_snapshot_when_the_newest_is_garbage = test_capture_falls_back_to_the_first_readable_snapshot_when_the_newest_is_garbage,
 }
