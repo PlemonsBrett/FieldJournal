@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.1-beta
+
+### Added
+
+- Add commit-msg hook to enforce Conventional Commits and improve release process
+
 ## 0.8.0-beta
 
 ## What's Changed
