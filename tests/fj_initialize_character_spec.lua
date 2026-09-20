@@ -112,6 +112,30 @@ local function test_completed_migration_rewrites_the_mirror()
         "a completed migration must replace the stale mirror content, not merge into it")
 end
 
+-- Plan 3b deliberately keeps this mirror rather than retiring it: it is the
+-- only copy of a character's journal that lives in a DIFFERENT saved-variables
+-- file from FieldJournalDB, and losing that whole file is the 0.7.x failure the
+-- in-file backup ring cannot protect against. Keeping it is only worth doing if
+-- it is complete, so it must carry all seven collections, not five.
+local function test_the_mirror_is_a_complete_second_copy_of_the_character()
+    local fj = load()
+    local charData = freshCharData({legacyMigrated = true})
+    charData.objectiveState[101] = "1/5"
+    charData.questBookmarks[101] = true
+    fj.db = {char = charData}
+    fj.initializeCharacter()
+
+    local mirror = _G.FieldJournalCharacterDB
+    assert(type(mirror) == "table", "the mirror must still be written")
+    for _, field in ipairs({"entries", "encounters", "diaryEvents", "craftEvents", "bestiary",
+                            "objectiveState", "questBookmarks"}) do
+        assert(mirror[field] == charData[field],
+            "the mirror must carry db.char." .. field .. " so it is a complete second copy")
+    end
+    assert(mirror.objectiveState[101] == "1/5", "in-flight objective progress must be mirrored")
+    assert(mirror.questBookmarks[101] == true, "quest bookmarks must be mirrored")
+end
+
 return {
     test_fresh_character_populates_all_namespace_fields_from_db_char =
         test_fresh_character_populates_all_namespace_fields_from_db_char,
@@ -119,4 +143,6 @@ return {
     test_failed_migration_does_not_clobber_the_existing_mirror =
         test_failed_migration_does_not_clobber_the_existing_mirror,
     test_completed_migration_rewrites_the_mirror = test_completed_migration_rewrites_the_mirror,
+    test_the_mirror_is_a_complete_second_copy_of_the_character =
+        test_the_mirror_is_a_complete_second_copy_of_the_character,
 }

@@ -21,6 +21,8 @@ local specs = {
     "tests/fj_database_spec.lua",
     "tests/fj_devtools_spec.lua",
     "tests/fj_migration_spec.lua",
+    "tests/fj_backup_spec.lua",
+    "tests/fj_slash_spec.lua",
     "tests/fj_no_global_reassignment_spec.lua",
     "tests/release_version_spec.lua",
 }

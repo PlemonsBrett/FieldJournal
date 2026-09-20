@@ -359,3 +359,8 @@ end
 
 Migrations.mergeList = mergeList
 Migrations.mergeIntoCharacter = mergeIntoCharacter
+-- Published for Core/Backup.lua. highestOrder lifts nextOrder above everything
+-- a restore just put back, exactly as migrateLegacy uses it here; countText
+-- keeps /fj backup's ring listing worded identically to the migration output.
+Migrations.highestOrder = highestOrder
+Migrations.countText = countText

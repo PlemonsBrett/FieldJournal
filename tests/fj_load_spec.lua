@@ -6,6 +6,7 @@ local MODULES = {
     "Core/Bootstrap.lua",
     "Core/Database.lua",
     "Core/Migrations.lua",
+    "Core/Backup.lua",
     "Core/SlashCommands.lua",
     "Core/DevTools.lua",
     "Data/QuestLog.lua",
@@ -46,7 +47,7 @@ local function test_all_modules_load_into_one_namespace()
          "questStageStory", "marginStory", "showDetail", "createWindow",
          "saveWindowPosition", "restoreWindowPosition"})
     assert(type(fj.Database) == "table", "FieldJournal.Database is missing")
-    assertFunctions(fj.Database, "FieldJournal.Database", {"initialize"})
+    assertFunctions(fj.Database, "FieldJournal.Database", {"initialize", "deepCopy"})
     assert(fj.Database.SCHEMA_VERSION == 2, "SCHEMA_VERSION changed unexpectedly")
     assert(type(fj.Database.defaults.char) == "table", "defaults.char is missing")
     assert(type(fj.Database.defaults.profile) == "table", "defaults.profile is missing")
@@ -56,7 +57,12 @@ local function test_all_modules_load_into_one_namespace()
     assert(type(fj.Migrations) == "table", "FieldJournal.Migrations is missing")
     assertFunctions(fj.Migrations, "FieldJournal.Migrations",
         {"run", "migrateLegacy", "legacyCharacterKey", "accountSlice", "counts",
-         "mergeList", "mergeIntoCharacter"})
+         "mergeList", "mergeIntoCharacter", "highestOrder", "countText"})
+    assert(type(fj.Backup) == "table", "FieldJournal.Backup is missing")
+    assertFunctions(fj.Backup, "FieldJournal.Backup",
+        {"snapshotData", "shouldCapture", "capture", "describe",
+         "dropSupersededPlaceholders", "repair"})
+    assert(fj.Backup.SNAPSHOT_LIMIT == 5, "the rotating ring must keep five snapshots")
     assertFunctions(fj.QuestLog, "FieldJournal.QuestLog",
         {"recoveredBody", "addEntry", "questTitle", "findUniqueQuestMention", "updateNoteBody",
          "captureNotePage", "captureSpeech", "flushPendingSpeech", "isPlaceholder",

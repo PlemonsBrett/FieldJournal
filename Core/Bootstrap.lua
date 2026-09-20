@@ -119,11 +119,20 @@ local function initializeCharacter()
     FieldJournal.craftEvents = charData.craftEvents
     charData.bestiary = charData.bestiary or {}
     FieldJournal.bestiary = charData.bestiary
-    -- The per-character mirror predates AceDB and is kept deliberately: it is a
-    -- second, independently written copy of the same five collections, and this
-    -- is precisely the release where a second copy is worth its disk space.
+    -- The per-character mirror predates AceDB and is KEPT, not retired. It is
+    -- the only copy of this character's journal that lives in a different file
+    -- on disk: FieldJournalCharacterDB goes to
+    --   WTF/Account/<ACCOUNT>/<Realm>/<Character>/SavedVariables/FieldJournal.lua
+    -- while everything else, including Core/Backup.lua's rotating snapshot ring,
+    -- lives inside the account-wide FieldJournalDB. The 0.7.x data-loss
+    -- incidents were a stale WoW process overwriting that account file whole, so
+    -- an in-file backup ring cannot defend against them and this mirror can.
     -- It keeps the old "<realm>:<char>" key format so the legacy shape stays
-    -- self-consistent. Core/Backup.lua (Plan 3b) supersedes it.
+    -- self-consistent, and it carries all seven collections so it is a complete
+    -- second copy -- the same flat shape FieldJournal.Migrations.mergeIntoCharacter
+    -- consumes, so it can be merged straight back in if it is ever needed.
+    -- Retiring it becomes reasonable once /fj export gives the player a copy
+    -- outside the game entirely; not before.
     -- Only rewrite it once legacyMigrated is true. If the one-time migration
     -- threw, charData's collections are still empty and legacyMigrated is
     -- deliberately left false so the next session retries -- overwriting the
@@ -133,7 +142,8 @@ local function initializeCharacter()
         FieldJournalCharacterDB = {
             key = key, entries = FieldJournal.entries, encounters = FieldJournal.encounters,
             diaryEvents = FieldJournal.diaryEvents, craftEvents = FieldJournal.craftEvents,
-            bestiary = FieldJournal.bestiary,
+            bestiary = FieldJournal.bestiary, objectiveState = FieldJournal.objectiveState,
+            questBookmarks = FieldJournal.questBookmarks,
         }
     end
     local entries, encounters, bestiary, questBookmarks =
@@ -233,8 +243,20 @@ FieldJournal.frame:SetScript("OnEvent", function(_, event, ...)
         if FieldJournal.DevTools and FieldJournal.DevTools.initialize then FieldJournal.DevTools.initialize() end
     elseif event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
         initializeCharacter()
-        if event == "PLAYER_LOGIN" and not partyKillRegistered and not unitDiedRegistered then
-            print("Field Journal: no kill event is available on this client; encounter recording is unavailable.")
+        if event == "PLAYER_LOGIN" then
+            -- One rotating snapshot per UI load. PLAYER_ENTERING_WORLD shares
+            -- this branch but fires on every zone change, instance entry and
+            -- resurrection, which would rotate the five-slot ring away inside a
+            -- single play session -- so the snapshot is deliberately inside the
+            -- PLAYER_LOGIN-only guard. It also runs AFTER initializeCharacter(),
+            -- so FieldJournal.charData exists and the bestiary index has already
+            -- been reconciled against the encounter log: the snapshot records
+            -- the settled state, not a half-loaded one. Core/Backup.lua decides
+            -- for itself whether the snapshot is worth taking, and never throws.
+            if FieldJournal.Backup then FieldJournal.Backup.capture(FieldJournal.charData) end
+            if not partyKillRegistered and not unitDiedRegistered then
+                print("Field Journal: no kill event is available on this client; encounter recording is unavailable.")
+            end
         end
     elseif event == "QUEST_DETAIL" then
         FieldJournal.QuestLog.captureQuest("Offered")

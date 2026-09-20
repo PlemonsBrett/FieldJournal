@@ -1,0 +1,437 @@
+-- Field Journal: the rotating self-heal backup ring, and (from Task 3) the
+-- restore half of /fj repair.
+--
+-- WHY THIS EXISTS. Releases 0.7.1 through 0.8.0 were spent recovering from
+-- SavedVariables loss, patched up afterwards by hand-adding
+-- FieldJournalRecoveryDB / DB2 / DB3 globals holding the maintainer's personal
+-- snapshots and merging them in at every load. That does not scale and cannot
+-- ship to other players -- nobody else's install has those globals. This file
+-- replaces the pattern with a ring of five snapshots that every install
+-- maintains for itself, and a /fj repair that merges anything the live data has
+-- lost back in. No developer-authored recovery global, ever again.
+--
+-- WHAT IS SNAPSHOTTED, AND HOW BIG IT IS. Exactly one thing: db.char -- which
+-- AceDB has already scoped to the logged-in character -- minus its own
+-- `backups` field. This is NOT an account-wide copy of every character; that
+-- distinction is the whole sizing argument. One beta character's journal is
+-- hundreds of records, and the ring is five copies of that. The `backups` field
+-- is excluded because including it would nest each snapshot inside the next and
+-- grow the saved file exponentially; test_snapshot_data_is_a_deep_copy_without_
+-- the_backups_field enforces that. SNAPSHOT_LIMIT below is the single knob:
+-- lowering it needs no schema change and no migration, exactly as the design
+-- spec allows.
+--
+-- WHEN A SNAPSHOT IS *NOT* TAKEN. The spec asks only for "skip if the most
+-- recent snapshot has identical record counts". That alone is not safe. If a
+-- login ever sees a damaged or unloaded db.char, a naive ring would dutifully
+-- back up the damage, and after five such logins would have rotated every good
+-- snapshot out -- destroying the only copy at exactly the moment it is needed.
+-- shouldCapture below therefore also refuses when the live data has LOST
+-- records relative to its baseline snapshot, and says so in chat. That baseline
+-- is the newest snapshot in the ring that can actually be READ -- shouldCapture
+-- walks newest to oldest and stops at the first parseable one, so a single
+-- garbage newest snapshot cannot silently disable the guard while slots 2-5
+-- still hold good history. It only gives up and answers "first" when no
+-- snapshot in the ring is parseable at all. One consequence worth knowing: if
+-- ring[1] is garbage but ring[2] matches the live counts exactly, the verdict
+-- is "identical" and no fresh snapshot is prepended in front of the garbage
+-- one -- safe, because nothing is lost and nothing rotates, and the ring still
+-- holds the same readable history. That is the same class of bug as the
+-- "backup mirror wiped on a failed migration" defect caught in Plan 3a review,
+-- and it is guarded here for the same reason.
+--
+-- WHAT THE RING DOES NOT PROTECT AGAINST. It lives inside FieldJournalDB --
+-- the same account saved-variables file whose loss motivated this whole phase.
+-- So it protects against in-file damage (a collection emptied, a bad merge, a
+-- half-written table) and not against the whole file disappearing. The
+-- independent second copy for that case is still the per-character
+-- FieldJournalCharacterDB mirror written by Core/Bootstrap.lua, which this
+-- release deliberately keeps, and later Plan 3c's /fj export.
+--
+-- Nothing in this file may throw. capture() runs inside the addon's PLAYER_LOGIN
+-- event dispatch and repair() runs from a slash command; both catch their own
+-- errors, print, and degrade.
+
+local FieldJournal = select(2, ...)
+
+local Backup = {}
+FieldJournal.Backup = Backup
+
+-- Five rotating snapshots, exactly as the Phase 1 design spec specifies. One
+-- knob, one place -- see the sizing note at the top of this file.
+Backup.SNAPSHOT_LIMIT = 5
+
+-- The five collections FieldJournal.Migrations.counts() tallies, paired with
+-- the wording /fj repair uses when it reports what it restored.
+local COUNTED = {
+    {field = "entries", label = "entries"},
+    {field = "encounters", label = "encounters"},
+    {field = "diaryEvents", label = "diary events"},
+    {field = "craftEvents", label = "craft events"},
+    {field = "bestiary", label = "bestiary species"},
+}
+
+-- Four of those five are append-only in normal play. Grepping Data/ for every
+-- write to them, the ONLY removals are two fixed-size caps --
+-- Data/Bestiary.lua's  `if #encounters > 2500 then table.remove(encounters, 1) end`
+-- and Data/Diary.lua's `if #collection > 3000 then table.remove(collection, 1) end`
+-- -- and each fires immediately after an append, so the net count never falls.
+-- The bestiary is a keyed map that is only added to or max-reconciled. A drop in
+-- any of these four therefore means records were lost, which is a reason to
+-- protect the ring rather than rotate it.
+--
+-- `entries` is deliberately NOT in this list. Data/QuestLog.lua's addEntry does
+--     if kind == "quest" and id then entries["past:" .. id] = nil end
+-- so when the player captures a real quest's text, the recovered-description
+-- placeholder for that quest is deleted. A one- or two-entry drop between
+-- logins is therefore normal, and treating it as data loss would freeze the
+-- ring for a player who is simply re-walking quests they had only completed
+-- before. But `entries` is also the quest/conversation text -- the most
+-- valuable and least reconstructible collection, and the actual subject of
+-- every historical data-loss incident that motivated this file -- so a wipe
+-- to exactly zero is never tolerated, no matter how healthy the other four
+-- collections are. shouldCapture enforces that with an entries-specific
+-- zero-floor check (`live.entries == 0 and previous.entries > 0`), separate
+-- from and in addition to the all-five-collections-zero check below; either
+-- one alone is enough to return "emptied".
+local MONOTONIC = {"encounters", "diaryEvents", "craftEvents", "bestiary"}
+
+local REASON_TEXT = {
+    shrunk = "this character has FEWER records than its most recent backup snapshot, "
+        .. "so no new snapshot was taken and the existing ones are preserved. Run /fj repair.",
+    emptied = "this character's journal (or its quest/conversation entries) is empty but its most "
+        .. "recent backup snapshot is not, so no new snapshot was taken and the existing ones are "
+        .. "preserved. Run /fj repair.",
+}
+
+-- Everything this file borrows lives on the shared namespace and is read at
+-- call time rather than captured at load time, so Core/Backup.lua stays
+-- loadable -- and every entry point stays non-throwing -- even if
+-- Core/Database.lua or Core/Migrations.lua failed to initialise.
+local function helpers()
+    local Database, Migrations = FieldJournal.Database, FieldJournal.Migrations
+    if type(Database) ~= "table" or type(Migrations) ~= "table" then return nil end
+    if type(Database.deepCopy) ~= "function" then return nil end
+    if type(Migrations.counts) ~= "function" then return nil end
+    if type(Migrations.countText) ~= "function" then return nil end
+    if type(Migrations.mergeIntoCharacter) ~= "function" then return nil end
+    if type(Migrations.highestOrder) ~= "function" then return nil end
+    return {
+        deepCopy = Database.deepCopy,
+        counts = Migrations.counts,
+        countText = Migrations.countText,
+        mergeIntoCharacter = Migrations.mergeIntoCharacter,
+        highestOrder = Migrations.highestOrder,
+    }
+end
+
+-- Prefer the counts stored on the snapshot (cheap, and what /fj backup lists),
+-- but recompute from the snapshot's own data if they are missing or malformed,
+-- which is what a hand-edited saved-variables file looks like.
+local function snapshotCounts(snapshot, h)
+    if type(snapshot) ~= "table" then return nil end
+    local stored = snapshot.counts
+    if type(stored) == "table" then
+        local usable = true
+        for _, counted in ipairs(COUNTED) do
+            if type(stored[counted.field]) ~= "number" then usable = false end
+        end
+        if usable then return stored end
+    end
+    if type(snapshot.data) == "table" then return h.counts(snapshot.data) end
+    return nil
+end
+
+--- A deep copy of every db.char field except the ring itself. This is exactly
+--  the flat shape FieldJournal.Migrations.mergeIntoCharacter consumes --
+--  entries / encounters / diaryEvents / craftEvents / bestiary / objectiveState
+--  / questBookmarks -- so a snapshot can be merged straight back in with no
+--  reshaping, and it additionally carries nextOrder and schemaVersion, which
+--  the restore path uses. Every other field of db.char is copied too, so a
+--  later plan adding a field gets it in the snapshot for free.
+function Backup.snapshotData(charData)
+    local h = helpers()
+    if not h or type(charData) ~= "table" then return nil end
+    local data = {}
+    for key, value in pairs(charData) do
+        if key ~= "backups" then data[key] = h.deepCopy(value) end
+    end
+    return data
+end
+
+-- The actual decision logic, factored out of Backup.shouldCapture so it can
+-- run inside a pcall (see below): FieldJournal.Migrations.counts() throws on
+-- a hand-edited SavedVariables file where a collection field is present but
+-- not a table (# and pairs() both raise on a non-table in Lua 5.1), and this
+-- file's own "nothing may throw" rule covers this decision exactly as it
+-- covers the write in performCapture.
+local function computeVerdict(charData, h)
+    local ring = charData.backups
+    if type(ring) ~= "table" then return true, "first" end
+
+    -- Walk from newest to oldest and use the first snapshot snapshotCounts
+    -- can actually parse as the baseline. Checking only ring[1] would let one
+    -- garbage newest snapshot silently disable the guard even when slots 2-5
+    -- hold perfectly good history to check against.
+    local previous
+    for index = 1, #ring do
+        previous = snapshotCounts(ring[index], h)
+        if previous then break end
+    end
+    if not previous then return true, "first" end
+
+    local live = h.counts(charData)
+
+    for _, field in ipairs(MONOTONIC) do
+        if live[field] < previous[field] then return false, "shrunk" end
+    end
+
+    -- entries is excluded from MONOTONIC (see the comment above) so a one- or
+    -- two-record drop from normal `past:<id>` placeholder churn is tolerated,
+    -- but a wipe to exactly zero never is, regardless of how healthy the
+    -- other four collections are -- see the comment above MONOTONIC for why.
+    if live.entries == 0 and previous.entries > 0 then return false, "emptied" end
+
+    local liveTotal, previousTotal, identical = 0, 0, true
+    for _, counted in ipairs(COUNTED) do
+        local field = counted.field
+        liveTotal = liveTotal + live[field]
+        previousTotal = previousTotal + previous[field]
+        if live[field] ~= previous[field] then identical = false end
+    end
+
+    if liveTotal == 0 and previousTotal > 0 then return false, "emptied" end
+    if identical then return false, "identical" end
+    return true, "changed"
+end
+
+--- Decides whether to add a snapshot to the ring. Returns ok, reason, where
+--  reason is one of "unavailable", "first", "identical", "shrunk", "emptied",
+--  "changed". Walks the ring newest-to-oldest for the first parseable
+--  snapshot to use as a baseline (see computeVerdict); only answers "first"
+--  if no snapshot in the ring can be parsed at all, which is the right
+--  recovery. The whole computation runs inside a pcall so a malformed live
+--  collection can never escape this function as an uncaught error -- it
+--  degrades to "unavailable" instead.
+function Backup.shouldCapture(charData)
+    local h = helpers()
+    if not h or type(charData) ~= "table" then return false, "unavailable" end
+
+    local ok, taken, reason = pcall(computeVerdict, charData, h)
+    if not ok then return false, "unavailable" end
+    return taken, reason
+end
+
+local function performCapture(charData, h)
+    local ring = charData.backups
+    if type(ring) ~= "table" then
+        ring = {}
+        charData.backups = ring
+    end
+    table.insert(ring, 1, {
+        at = time(),
+        counts = h.counts(charData),
+        data = Backup.snapshotData(charData),
+    })
+    while #ring > Backup.SNAPSHOT_LIMIT do table.remove(ring) end
+end
+
+--- Takes one rotating snapshot if shouldCapture agrees. Returns taken, reason.
+--  Never throws: called from Core/Bootstrap.lua's PLAYER_LOGIN dispatch.
+function Backup.capture(charData)
+    local ok, reason = Backup.shouldCapture(charData)
+    if not ok then
+        if REASON_TEXT[reason] then print("Field Journal: " .. REASON_TEXT[reason]) end
+        return false, reason
+    end
+
+    local done, err = pcall(performCapture, charData, helpers())
+    if not done then
+        FieldJournal.backupError = tostring(err)
+        print("Field Journal: could not take a backup snapshot (" .. tostring(err)
+            .. "). Your journal was not changed.")
+        return false, "error"
+    end
+
+    FieldJournal.backupError = nil
+    return true, reason
+end
+
+local UNAVAILABLE_DESCRIPTION = "Field Journal: the database is not available, so there are no backup snapshots."
+
+-- The actual line-building logic, factored out of Backup.describe so it can
+-- run inside a pcall. snapshotCounts can fall back to
+-- FieldJournal.Migrations.counts(snapshot.data), which throws on the same
+-- malformed-collection shapes computeVerdict above guards against -- a
+-- snapshot's own stored data can be just as damaged as live data.
+local function computeDescription(charData, h)
+    local ring = type(charData.backups) == "table" and charData.backups or {}
+    if #ring == 0 then
+        return {"Field Journal: no backup snapshots yet. One is taken automatically at each login."}
+    end
+
+    local lines = {"Field Journal: " .. #ring .. " of " .. Backup.SNAPSHOT_LIMIT
+        .. " backup snapshots, newest first."}
+    for index = 1, #ring do
+        local snapshot = ring[index]
+        local tally = snapshotCounts(snapshot, h)
+        local at = type(snapshot) == "table" and tonumber(snapshot.at) or nil
+        lines[#lines + 1] = "  " .. index .. ". "
+            .. (at and date("%Y-%m-%d %H:%M", at) or "unknown time")
+            .. " - " .. (tally and h.countText(tally) or "unreadable snapshot")
+    end
+    return lines
+end
+
+--- Re-applies Data/QuestLog.lua addEntry's own rule:
+---     if kind == "quest" and id then entries["past:" .. id] = nil end
+--  When the player captures a real quest's text, the recovered-description
+--  placeholder for that quest is deleted. A snapshot taken before that capture
+--  still holds the placeholder, and Migrations.mergeIntoCharacter fills in any
+--  entry key the target is missing -- so without this pass a restore resurrects
+--  every placeholder the player has already replaced, and the Quests tab shows
+--  the same quest twice. Returns how many were dropped.
+function Backup.dropSupersededPlaceholders(charData)
+    if type(charData) ~= "table" or type(charData.entries) ~= "table" then return 0 end
+
+    -- Collect first, delete second: never remove keys while iterating pairs().
+    local superseded = {}
+    for _, entry in pairs(charData.entries) do
+        if type(entry) == "table" and entry.kind == "quest" and entry.questID then
+            superseded["past:" .. tostring(entry.questID)] = true
+        end
+    end
+
+    local dropped = 0
+    for key in pairs(superseded) do
+        if charData.entries[key] ~= nil then
+            charData.entries[key] = nil
+            dropped = dropped + 1
+        end
+    end
+    return dropped
+end
+
+local function performRepair(charData, h)
+    local ring = charData.backups
+    local before = h.counts(charData)
+    local merged, highestNextOrder = 0, 0
+
+    -- Snapshot which past:<questID> placeholders are already live BEFORE the
+    -- merge. A merge can reintroduce a placeholder a ring snapshot still holds
+    -- (mergeEntries fills any key the live copy is missing) even though the
+    -- player already replaced it with a real quest entry -- that placeholder
+    -- gets dropped again below in the same call, and that add-then-remove is
+    -- merge-internal churn, not a reportable repair action. Only a placeholder
+    -- that was ALREADY live before this call counts as a genuine drop.
+    local preExistingPast = {}
+    if type(charData.entries) == "table" then
+        for key in pairs(charData.entries) do
+            if type(key) == "string" and key:sub(1, 5) == "past:" then
+                preExistingPast[key] = true
+            end
+        end
+    end
+
+    -- Newest snapshot first: where two snapshots both hold a record the live
+    -- data lost, mergeEntries keeps whichever arrived first, so the most recent
+    -- version wins and older snapshots only fill in what the newer ones lack.
+    -- The merge always gets a DEEP COPY. Migrations.mergeIntoCharacter inserts
+    -- source record tables by reference, so merging snapshot.data itself would
+    -- make live records and ring records the same Lua tables forever after --
+    -- a later edit to a restored record would silently rewrite the backup.
+    for index = 1, #ring do
+        local snapshot = ring[index]
+        if type(snapshot) == "table" and type(snapshot.data) == "table" then
+            h.mergeIntoCharacter(charData, h.deepCopy(snapshot.data), "backup snapshot " .. index)
+            if type(snapshot.data.nextOrder) == "number" and snapshot.data.nextOrder > highestNextOrder then
+                highestNextOrder = snapshot.data.nextOrder
+            end
+            merged = merged + 1
+        end
+    end
+
+    -- dropSupersededPlaceholders removes every superseded placeholder, including
+    -- ones the merge itself just reintroduced, and its return count is therefore
+    -- deliberately discarded rather than reported. Only placeholders present in
+    -- preExistingPast (i.e. genuinely live before this call) and now gone count
+    -- toward the reported total.
+    Backup.dropSupersededPlaceholders(charData)
+    local dropped = 0
+    for key in pairs(preExistingPast) do
+        if charData.entries[key] == nil then
+            dropped = dropped + 1
+        end
+    end
+    charData.nextOrder = math.max(charData.nextOrder or 0, highestNextOrder, h.highestOrder(charData))
+    return before, h.counts(charData), merged, dropped
+end
+
+--- Merges every snapshot in the ring back into the live journal and reports
+--  what that recovered. Returns restored, reason -- one of "unavailable",
+--  "empty", "error", "nothing", "restored". Never throws.
+--
+--  Every snapshot is merged rather than only those with a strictly higher
+--  record count: counts are not content, so a backup with fewer total records
+--  can still be the only surviving copy of something. The merge is
+--  non-destructive by construction (an existing entry is never overwritten,
+--  bestiary fields take the max of both sides, lists de-duplicate by identity)
+--  and idempotent, so running it when it was not needed changes nothing. The
+--  count comparison is kept -- as the report.
+function Backup.repair(charData)
+    local h = helpers()
+    if not h or type(charData) ~= "table" then
+        print("Field Journal: the database is not available, so there is nothing to repair.")
+        return false, "unavailable"
+    end
+    if type(charData.backups) ~= "table" or #charData.backups == 0 then
+        print("Field Journal: no backup snapshots have been taken yet, so there is nothing to restore from.")
+        return false, "empty"
+    end
+
+    local results = {pcall(performRepair, charData, h)}
+    if not results[1] then
+        FieldJournal.backupError = tostring(results[2])
+        print("Field Journal: the backup restore failed (" .. tostring(results[2])
+            .. "). Nothing else was changed. Run /fj status and report this.")
+        return false, "error"
+    end
+    local before, after, merged, dropped = results[2], results[3], results[4], results[5]
+
+    local restored = {}
+    for _, counted in ipairs(COUNTED) do
+        local gained = after[counted.field] - before[counted.field]
+        if gained > 0 then restored[#restored + 1] = gained .. " " .. counted.label end
+    end
+
+    if #restored == 0 and dropped == 0 then
+        print("Field Journal: checked " .. merged .. " backup snapshot(s); no repair needed.")
+        return false, "nothing"
+    end
+
+    if #restored > 0 then
+        print("Field Journal: restored " .. table.concat(restored, ", ")
+            .. " from " .. merged .. " backup snapshot(s).")
+    end
+    if dropped > 0 then
+        print("Field Journal: dropped " .. dropped
+            .. " earlier-quest placeholder(s) you have since replaced with your own record.")
+    end
+    return true, "restored"
+end
+
+--- Chat-ready lines describing the ring, newest first. Returned as a table
+--  rather than printed so /fj backup, /fj status and the test suite can all
+--  read the same description without capturing print. Never throws: a
+--  malformed snapshot degrades to the same "database is not available" line
+--  used when there is no database at all, rather than an uncaught error.
+function Backup.describe(charData)
+    local h = helpers()
+    if not h or type(charData) ~= "table" then
+        return {UNAVAILABLE_DESCRIPTION}
+    end
+
+    local ok, lines = pcall(computeDescription, charData, h)
+    if not ok then return {UNAVAILABLE_DESCRIPTION} end
+    return lines
+end
