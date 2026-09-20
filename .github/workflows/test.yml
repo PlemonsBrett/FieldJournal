@@ -15,7 +15,7 @@ concurrency:
 jobs:
   lua-tests:
     name: Lua 5.1 tests
-    if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: prepare release') }}
+    if: "${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: prepare release') }}"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -31,7 +31,7 @@ jobs:
 
   package:
     name: Package dry-run
-    if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: prepare release') }}
+    if: "${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: prepare release') }}"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

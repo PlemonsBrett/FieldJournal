@@ -17,7 +17,7 @@ permissions:
 jobs:
   prepare:
     name: Changelog and draft release
-    if: ${{ !startsWith(github.event.head_commit.message, 'chore: prepare release') }}
+    if: "${{ !startsWith(github.event.head_commit.message, 'chore: prepare release') }}"
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.prep.outputs.version }}
