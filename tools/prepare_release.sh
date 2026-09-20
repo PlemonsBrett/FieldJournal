@@ -62,9 +62,12 @@ if [ -n "$last_tag" ]; then
 else
   "$cliff_bin" --config cliff.toml > "$notes_file"
 fi
-if [ ! -s "$notes_file" ]; then
-  echo "git-cliff produced no changelog entries for this release (only chore/build/ci/test commits since ${last_tag:-the start})." >&2
-  exit 1
+if ! grep -q '[^[:space:]]' "$notes_file"; then
+  echo "git-cliff produced no changelog entries (only chore/build/ci/test/style commits since ${last_tag:-the start}); skipping draft release."
+  if [ -n "${GITHUB_OUTPUT:-}" ]; then
+    echo "version=" >> "$GITHUB_OUTPUT"
+  fi
+  exit 0
 fi
 
 "$lua_bin" tools/release_version.lua apply FieldJournal.toc CHANGELOG.md "$version" "$notes_file"
