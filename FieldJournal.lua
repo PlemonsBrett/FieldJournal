@@ -1,4 +1,13 @@
-local addonName = ...
+local addonName, FieldJournal = ...
+local clean = FieldJournal.clean
+local accessible = FieldJournal.accessible
+local characterKey = FieldJournal.characterKey
+local currentZone = FieldJournal.currentZone
+local currentPlace = FieldJournal.currentPlace
+local currentMapPosition = FieldJournal.currentMapPosition
+local creatureIDFromGUID = FieldJournal.creatureIDFromGUID
+local itemName = FieldJournal.itemName
+local moneyText = FieldJournal.moneyText
 local journal = CreateFrame("Frame")
 local db
 local entries
@@ -48,10 +57,6 @@ local recentTraining = {}
 local initializeCharacter
 local loadedCharacterKey
 
-local function characterKey()
-    return (GetRealmName() or "Unknown realm") .. ":" .. (UnitName("player") or "Unknown character")
-end
-
 local function savedCharacterKey()
     local key = characterKey()
     if not db or not db.characters or db.characters[key] then return key end
@@ -68,43 +73,6 @@ local function savedCharacterKey()
     return found or key
 end
 
-local function clean(value)
-    if type(value) ~= "string" then return "" end
-    return value:gsub("^%s+", ""):gsub("%s+$", "")
-end
-
-local function accessible(value)
-    if canaccessvalue then return canaccessvalue(value) end
-    if issecretvalue then return not issecretvalue(value) end
-    return true
-end
-
-local function currentZone()
-    return clean(GetRealZoneText()) ~= "" and GetRealZoneText() or "Unknown zone"
-end
-
-local function currentPlace()
-    local zone = currentZone()
-    local subzone = GetSubZoneText and clean(GetSubZoneText()) or ""
-    if subzone ~= "" and subzone ~= zone then return subzone .. ", " .. zone end
-    return zone
-end
-
-local function currentMapPosition()
-    if not C_Map or not C_Map.GetBestMapForUnit or not C_Map.GetPlayerMapPosition then return end
-    local mapID = C_Map.GetBestMapForUnit("player")
-    if not mapID then return end
-    local position = C_Map.GetPlayerMapPosition(mapID, "player")
-    if not position then return end
-    local x, y = position.x, position.y
-    if type(x) == "number" and type(y) == "number" then return mapID, x, y end
-end
-
-local function creatureIDFromGUID(guid)
-    if type(guid) ~= "string" then return nil end
-    return guid:match("^[^%-]+%-[^%-]+%-[^%-]+%-[^%-]+%-[^%-]+%-(%d+)")
-end
-
 local function addLifeEvent(collection, kind, title, body, extra)
     if not collection or not db then return end
     db.nextOrder = db.nextOrder + 1
@@ -119,30 +87,6 @@ local function addLifeEvent(collection, kind, title, body, extra)
     if #collection > 3000 then table.remove(collection, 1) end
     if window and window:IsShown() then journal:Refresh() end
     return event
-end
-
-local function itemName(itemID, fallback)
-    if itemID and GetItemInfo then
-        local name = GetItemInfo(itemID)
-        if clean(name) ~= "" then return name end
-    end
-    if itemID and C_Item and C_Item.GetItemNameByID then
-        local name = C_Item.GetItemNameByID(itemID)
-        if clean(name) ~= "" then return name end
-    end
-    return clean(fallback) ~= "" and fallback or ("Item #" .. tostring(itemID or "?"))
-end
-
-local function moneyText(copper)
-    copper = math.max(0, math.floor(tonumber(copper) or 0))
-    local gold = math.floor(copper / 10000)
-    local silver = math.floor(copper / 100) % 100
-    local coins = copper % 100
-    local parts = {}
-    if gold > 0 then parts[#parts + 1] = gold .. " gold" end
-    if silver > 0 then parts[#parts + 1] = silver .. " silver" end
-    if coins > 0 or #parts == 0 then parts[#parts + 1] = coins .. " copper" end
-    return table.concat(parts, ", ")
 end
 
 local function recoveredBody(questID)

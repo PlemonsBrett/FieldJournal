@@ -12,6 +12,7 @@ local specs = {
     "tests/acedb_spec.lua",
     "tests/aceserializer_spec.lua",
     "tests/libdeflate_spec.lua",
+    "tests/fj_core_spec.lua",
 }
 
 local passed, failed = 0, 0
