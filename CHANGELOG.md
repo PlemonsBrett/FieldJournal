@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.0-beta
+
+## What's Changed
+* feat: draft releases on merge and publish to Wago when accepted by @PlemonsBrett in https://github.com/PlemonsBrett/FieldJournal/pull/13
+
+## New Contributors
+* @PlemonsBrett made their first contribution in https://github.com/PlemonsBrett/FieldJournal/pull/13
+
+**Full Changelog**: https://github.com/PlemonsBrett/FieldJournal/commits/v0.8.0-beta
+
 ## AceDB-3.0 persistence migration
 
 Journal data now lives in an AceDB-3.0-managed per-character store (`FieldJournalDB.char`) instead of the raw account-wide table indexed by hand-built character keys. A one-time migration runs automatically the first time each character logs in: it reads the old `characters`/`encounters`/`diaryEvents`/`craftEvents`/`bestiary`/`objectiveStates`/`questBookmarks` tables (plus the per-character `FieldJournalCharacterDB` mirror and any `FieldJournalRecoveryDB`/`DB2`/`DB3` snapshots), merges them with the same identity-based, never-overwrite rules the addon has always used, and marks itself done so it never re-runs. The old data is left untouched on disk as a fallback. `/fj status` now reports the schema version and whether the legacy migration has completed.
