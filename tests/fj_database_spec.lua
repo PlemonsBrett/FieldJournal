@@ -63,10 +63,12 @@ end
 
 local function test_acedb_initializes_on_a_client_with_a_broken_region()
     local fj = loadStack(true)
-    -- Nothing in this addon may ever reassign these globals (that approach
-    -- caused a real live taint incident under WoW's secret-value protections).
-    -- AceDB-3.0.lua's patched lines must call the real client functions
-    -- directly, so they must be completely untouched after loading.
+    -- These values must be exactly what the hostile client set them to --
+    -- AceDB-3.0.lua's patch calls them directly and never reassigns them (see
+    -- tests/fj_no_global_reassignment_spec.lua for the stronger, source-level
+    -- guarantee; this assertion alone would also have passed under the
+    -- abandoned wrap-then-restore shim, so it does not by itself distinguish
+    -- "never touched" from "wrapped and restored").
     assert(GetCurrentRegion() == 72, "something reassigned GetCurrentRegion — it must never be touched")
     assert(_G.GetLocale == nil, "something reassigned GetLocale — it must never be touched")
     assert(UnitFactionGroup("player") == nil, "something reassigned UnitFactionGroup — it must never be touched")
@@ -137,9 +139,54 @@ local function test_acedb_survives_a_nil_realm_and_a_nil_character_name()
     clearClient()
 end
 
+-- The six globals AceDB-3.0.lua's inline patch (Libs/AceDB-3.0/AceDB-3.0.lua)
+-- guards with fjCall. GetLocale is included even though hostileClient()
+-- already leaves it nil by default, so every guarded global gets the same
+-- individual coverage below.
+local GUARDED_GLOBALS_FOR_ACEDB = {
+    "GetRealmName", "UnitName", "UnitClass", "UnitRace", "UnitFactionGroup",
+    "GetCurrentRegion", "GetLocale",
+}
+
+-- Each of AceDB-3.0.lua's six guarded globals must be safe to load against
+-- even when the global does not exist at all on the client (not merely
+-- returns a bad value) -- this is the exact class of bug the fjCall patch
+-- exists to prevent, and the whole reason the abandoned Core/ClientCompat.lua
+-- shim guarded every one of these, not just GetLocale.
+local function test_acedb_survives_each_guarded_global_being_completely_absent()
+    for _, name in ipairs(GUARDED_GLOBALS_FOR_ACEDB) do
+        hostileClient()
+        _G[name] = nil
+        local ok, err = pcall(dofile, "Libs/LibStub/LibStub.lua")
+        assert(ok, "Libs/LibStub/LibStub.lua failed to load: " .. tostring(err))
+        local acedbOk, acedbErr = pcall(dofile, "Libs/AceDB-3.0/AceDB-3.0.lua")
+        assert(acedbOk, "Libs/AceDB-3.0/AceDB-3.0.lua crashed with " .. name
+            .. " completely absent: " .. tostring(acedbErr))
+        clearClient()
+    end
+end
+
+-- Each of AceDB-3.0.lua's six guarded globals must also be safe to load
+-- against when the client's real function exists but throws instead of
+-- returning a value -- fjCall's pcall is what protects against this case.
+local function test_acedb_survives_each_guarded_global_throwing()
+    for _, name in ipairs(GUARDED_GLOBALS_FOR_ACEDB) do
+        hostileClient()
+        _G[name] = function() error("boom: " .. name .. " is broken on this client") end
+        local ok, err = pcall(dofile, "Libs/LibStub/LibStub.lua")
+        assert(ok, "Libs/LibStub/LibStub.lua failed to load: " .. tostring(err))
+        local acedbOk, acedbErr = pcall(dofile, "Libs/AceDB-3.0/AceDB-3.0.lua")
+        assert(acedbOk, "Libs/AceDB-3.0/AceDB-3.0.lua crashed with " .. name
+            .. " throwing: " .. tostring(acedbErr))
+        clearClient()
+    end
+end
+
 return {
     test_acedb_initializes_on_a_client_with_a_broken_region = test_acedb_initializes_on_a_client_with_a_broken_region,
     test_defaults_populate_the_character_section = test_defaults_populate_the_character_section,
     test_initialize_is_safe_when_acedb_is_missing = test_initialize_is_safe_when_acedb_is_missing,
     test_acedb_survives_a_nil_realm_and_a_nil_character_name = test_acedb_survives_a_nil_realm_and_a_nil_character_name,
+    test_acedb_survives_each_guarded_global_being_completely_absent = test_acedb_survives_each_guarded_global_being_completely_absent,
+    test_acedb_survives_each_guarded_global_throwing = test_acedb_survives_each_guarded_global_throwing,
 }
