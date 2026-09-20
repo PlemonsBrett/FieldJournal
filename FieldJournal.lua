@@ -8,43 +8,29 @@ local currentMapPosition = FieldJournal.currentMapPosition
 local creatureIDFromGUID = FieldJournal.creatureIDFromGUID
 local itemName = FieldJournal.itemName
 local moneyText = FieldJournal.moneyText
-local journal = CreateFrame("Frame")
-local db
-local entries
-local selectedKey
-local zoneFilter = "All zones"
-local searchText = ""
-local window
+FieldJournal.frame = CreateFrame("Frame")
+FieldJournal.UI.zoneFilter = "All zones"
+FieldJournal.UI.searchText = ""
+FieldJournal.UI.viewItems = {}
 local rows = {}
 local visibleKeys = {}
-local viewItems = {}
 local zoneButton
 local detailText
 local detailScrollChild
 local bookmarkButton
 local linkButton
 local writeButton
-local noteEditor
-local noteEditBox
-local questPicker
 local relatedKeys = {}
 local relatedIndex = 0
 local countText
 local historyButton
-local recoveredQuestText
 local activeNoteTitle
 local activeNoteKey
 local pendingSpeech = {}
-local objectiveState
-local questBookmarks
-local encounters
 local recentDeaths = {}
 local observedUnits = {}
 local observedUnitCount = 0
 local detailBlocks = {}
-local diaryEvents
-local craftEvents
-local bestiary
 local lootSlots = {}
 local merchantContext
 local trainerContext
@@ -55,9 +41,9 @@ local tabButtons = {}
 local recentQuestContexts = {}
 local recentTraining = {}
 local initializeCharacter
-local loadedCharacterKey
 
 local function savedCharacterKey()
+    local db = FieldJournal.db
     local key = characterKey()
     if not db or not db.characters or db.characters[key] then return key end
     local name = UnitName("player")
@@ -74,6 +60,7 @@ local function savedCharacterKey()
 end
 
 local function addLifeEvent(collection, kind, title, body, extra)
+    local db = FieldJournal.db
     if not collection or not db then return end
     db.nextOrder = db.nextOrder + 1
     local event = {
@@ -85,11 +72,12 @@ local function addLifeEvent(collection, kind, title, body, extra)
     if extra then for key, value in pairs(extra) do event[key] = value end end
     collection[#collection + 1] = event
     if #collection > 3000 then table.remove(collection, 1) end
-    if window and window:IsShown() then journal:Refresh() end
+    FieldJournal.UI.RefreshIfShown()
     return event
 end
 
 local function recoveredBody(questID)
+    local recoveredQuestText = FieldJournal.recoveredQuestText
     local text = recoveredQuestText and recoveredQuestText[questID]
     if not text then return nil end
     local class = UnitClass("player") or "adventurer"
@@ -97,6 +85,7 @@ local function recoveredBody(questID)
 end
 
 local function addEntry(kind, id, stage, title, body, speaker, linkedQuestID)
+    local db, entries = FieldJournal.db, FieldJournal.entries
     body = clean(body)
     if body == "" or not entries then return end
     title = clean(title)
@@ -123,7 +112,7 @@ local function addEntry(kind, id, stage, title, body, speaker, linkedQuestID)
         }
         entries[key] = entry
         entry.mapID, entry.mapX, entry.mapY = currentMapPosition()
-        if window and window:IsShown() then journal:Refresh() end
+    FieldJournal.UI.RefreshIfShown()
     elseif linkedQuestID and not entry.linkedQuestID then
         entry.linkedQuestID = linkedQuestID
     end
@@ -131,6 +120,7 @@ local function addEntry(kind, id, stage, title, body, speaker, linkedQuestID)
 end
 
 local function questTitle(questID)
+    local entries = FieldJournal.entries
     for _, entry in pairs(entries or {}) do
         if (entry.kind == "quest" or entry.kind == "pastQuest") and entry.questID == questID then
             return entry.title
@@ -144,6 +134,7 @@ local function questTitle(questID)
 end
 
 local function findUniqueQuestMention(term)
+    local entries = FieldJournal.entries
     term = clean(term):lower()
     if #term < 4 then return nil end
     local matches = {}
@@ -198,6 +189,7 @@ local function updateNoteBody(entry)
 end
 
 local function captureNotePage()
+    local db, entries = FieldJournal.db, FieldJournal.entries
     if not entries or not ItemTextGetText then return end
     local body = clean(ItemTextGetText())
     if body == "" then return end
@@ -234,7 +226,7 @@ local function captureNotePage()
     entry.pages = entry.pages or {}
     entry.pages[page] = body
     updateNoteBody(entry)
-    if window and window:IsShown() then journal:Refresh() end
+    FieldJournal.UI.RefreshIfShown()
 end
 
 local function captureSpeech(stage, message, speaker)
@@ -316,6 +308,7 @@ local function observedName(guid)
 end
 
 local function recordEncounter(guid, name, source)
+    local db, encounters, bestiary = FieldJournal.db, FieldJournal.encounters, FieldJournal.bestiary
     if not encounters or not guid or recentDeaths[guid] then return end
     name = clean(name)
     if name == "" then return end
@@ -353,7 +346,7 @@ local function recordEncounter(guid, name, source)
         addEntry("kill", nil, "Encounter", name,
             story, "", questID)
     end
-    if window and window:IsShown() then journal:Refresh() end
+    FieldJournal.UI.RefreshIfShown()
 end
 
 local function isPlaceholder(entry)
@@ -364,6 +357,7 @@ local function isPlaceholder(entry)
 end
 
 local function importCompletedQuests(silent)
+    local db, entries = FieldJournal.db, FieldJournal.entries
     if not entries or not C_QuestLog or not C_QuestLog.GetAllCompletedQuestIDs then
         if not silent then print("Field Journal: completed quest history is unavailable in this client.") end
         return
@@ -404,7 +398,7 @@ local function importCompletedQuests(silent)
         end
     end
     if not silent then print("Field Journal: recovered " .. recovered .. " earlier quest descriptions. Unverified title-only entries are hidden.") end
-    if window and window:IsShown() then journal:Refresh() end
+    FieldJournal.UI.RefreshIfShown()
 end
 
 local function questSpeaker()
@@ -412,6 +406,7 @@ local function questSpeaker()
 end
 
 local function linkRecentConversation(questID, speaker)
+    local entries = FieldJournal.entries
     if not questID or clean(speaker) == "" then return end
     local now = time()
     local changed = false
@@ -423,7 +418,7 @@ local function linkRecentConversation(questID, speaker)
             changed = true
         end
     end
-    if changed and window and window:IsShown() then journal:Refresh() end
+    if changed then FieldJournal.UI.RefreshIfShown() end
 end
 
 local function captureQuest(stage)
@@ -462,6 +457,7 @@ local function activeQuests()
 end
 
 local function syncActiveQuestLog()
+    local entries, objectiveState = FieldJournal.entries, FieldJournal.objectiveState
     if not entries or not C_QuestLog or not C_QuestLog.GetNumQuestLogEntries or not C_QuestLog.GetInfo then return end
     local count = C_QuestLog.GetNumQuestLogEntries() or 0
     for index = 1, count do
@@ -525,6 +521,7 @@ local function captureLootSlots()
 end
 
 local function commitLootSlot(slot)
+    local db, bestiary, craftEvents = FieldJournal.db, FieldJournal.bestiary, FieldJournal.craftEvents
     local loot = lootSlots[slot]
     lootSlots[slot] = nil
     if not loot then return end
@@ -561,7 +558,7 @@ local function commitLootSlot(slot)
             .. (sourceName and (" from " .. sourceName) or (" near " .. currentPlace())) .. "."
         addEntry("pickup", nil, "Found", loot.name, body, "", questID)
     end
-    if window and window:IsShown() then journal:Refresh() end
+    FieldJournal.UI.RefreshIfShown()
 end
 
 local function spellName(spellID)
@@ -574,6 +571,7 @@ local function spellName(spellID)
 end
 
 local function learnedSpell(spellID)
+    local diaryEvents = FieldJournal.diaryEvents
     if not diaryEvents or not spellID or not accessible(spellID) then return end
     local name = spellName(spellID)
     if clean(name) == "" or recentTraining[spellID] and time() - recentTraining[spellID] < 4 then return end
@@ -586,6 +584,7 @@ local function learnedSpell(spellID)
 end
 
 local function recordCraft(itemID, name, count)
+    local craftEvents = FieldJournal.craftEvents
     name = itemName(itemID, name)
     if name == "" then return end
     local key = tostring(itemID or name)
@@ -597,6 +596,7 @@ local function recordCraft(itemID, name, count)
 end
 
 local function recordSkillMessage(message)
+    local craftEvents = FieldJournal.craftEvents
     if type(message) ~= "string" or not accessible(message) then return end
     local skill, level = message:match("[Yy]our skill in (.-) has increased to (%d+)")
     level = tonumber(level)
@@ -624,6 +624,7 @@ local function currentGroup()
 end
 
 local function updateGroup()
+    local diaryEvents = FieldJournal.diaryEvents
     local now = currentGroup()
     if groupSnapshot then
         for name in pairs(now) do
@@ -655,6 +656,7 @@ local function bagSnapshot()
 end
 
 local function checkMerchant()
+    local diaryEvents = FieldJournal.diaryEvents
     if not merchantContext or not diaryEvents then return end
     local newItems, newNames = bagSnapshot()
     local newMoney = GetMoney and GetMoney() or 0
@@ -792,8 +794,10 @@ local function batchDescription(batch)
 end
 
 local function buildLifeViews(collection, kind)
+    local searchText = FieldJournal.UI.searchText
     local result, days = {}, {}
-    viewItems = {}
+    FieldJournal.UI.viewItems = {}
+    local viewItems = FieldJournal.UI.viewItems
     for _, item in ipairs(collection or {}) do
         local day = date("%Y-%m-%d", item.seenAt or time())
         local group = days[day]
@@ -818,8 +822,10 @@ local function buildLifeViews(collection, kind)
 end
 
 local function buildBestiaryViews()
+    local bestiary, searchText = FieldJournal.bestiary, FieldJournal.UI.searchText
     local result = {}
-    viewItems = {}
+    FieldJournal.UI.viewItems = {}
+    local viewItems = FieldJournal.UI.viewItems
     local query = searchText:lower()
     for key, beast in pairs(bestiary or {}) do
         local view = {key = "beast:" .. key, kind = "beast", title = beast.name,
@@ -833,13 +839,16 @@ local function buildBestiaryViews()
 end
 
 local function matchingEntries()
-    if currentTab == "diary" then return buildLifeViews(diaryEvents, "diary") end
+    local entries, questBookmarks = FieldJournal.entries, FieldJournal.questBookmarks
+    local searchText, zoneFilter = FieldJournal.UI.searchText, FieldJournal.UI.zoneFilter
+    if currentTab == "diary" then return buildLifeViews(FieldJournal.diaryEvents, "diary") end
     if currentTab == "bestiary" then return buildBestiaryViews() end
-    if currentTab == "craft" then return buildLifeViews(craftEvents, "craft") end
+    if currentTab == "craft" then return buildLifeViews(FieldJournal.craftEvents, "craft") end
     local result, groups, loose = {}, {}, {}
     local active = activeQuests()
     local captured = {}
-    viewItems = {}
+    FieldJournal.UI.viewItems = {}
+    local viewItems = FieldJournal.UI.viewItems
     for _, entry in pairs(entries or {}) do
         if entry.kind == "quest" and entry.questID then captured[entry.questID] = true end
     end
@@ -918,6 +927,7 @@ local function matchingEntries()
 end
 
 local function zones()
+    local viewItems = FieldJournal.UI.viewItems
     local result, seen = {"All zones"}, {}
     for _, entry in pairs(viewItems) do
         if entry.zone and not seen[entry.zone] then
@@ -968,6 +978,7 @@ local function makeButton(parent, width, height, label)
 end
 
 local function questOptions()
+    local entries = FieldJournal.entries
     local options, seen, archive = {}, {}, {}
     if C_QuestLog and C_QuestLog.GetNumQuestLogEntries and C_QuestLog.GetInfo then
         local count = C_QuestLog.GetNumQuestLogEntries() or 0
@@ -997,6 +1008,7 @@ local function questOptions()
 end
 
 local function refreshQuestPicker()
+    local questPicker = FieldJournal.UI.questPicker
     if not questPicker then return end
     local options = questPicker.options or {}
     local offset = math.min(questPicker.offset or 0, math.max(0, #options - #questPicker.rows))
@@ -1016,9 +1028,10 @@ local function refreshQuestPicker()
 end
 
 local function openQuestPicker()
+    local questPicker, entries = FieldJournal.UI.questPicker, FieldJournal.entries
     if not questPicker then return end
     questPicker.options = questOptions()
-    local entry = selectedKey and entries[selectedKey]
+    local entry = FieldJournal.UI.selectedKey and entries[FieldJournal.UI.selectedKey]
     if entry and entry.linkedQuestID then
         table.insert(questPicker.options, 1, {title = "Remove quest link", remove = true})
     end
@@ -1122,6 +1135,7 @@ local function marginStory(item)
 end
 
 local function showDetail(entry)
+    local entries, encounters = FieldJournal.entries, FieldJournal.encounters
     relatedKeys = {}
     if not entry then
         for _, block in ipairs(detailBlocks) do block.font:Hide(); block.line:Hide() end
@@ -1321,47 +1335,52 @@ local function showDetail(entry)
     end
 end
 
-function journal:Refresh()
-    if not window then return end
+function FieldJournal.UI.Refresh()
+    if not FieldJournal.UI.window then return end
     visibleKeys = matchingEntries()
-    if not selectedKey and currentTab ~= "quests" and #visibleKeys > 0 then selectedKey = visibleKeys[1] end
+    if not FieldJournal.UI.selectedKey and currentTab ~= "quests" and #visibleKeys > 0 then FieldJournal.UI.selectedKey = visibleKeys[1] end
     countText:SetText(#visibleKeys .. (currentTab == "bestiary" and " species"
         or currentTab == "quests" and " quests" or " days"))
-    zoneButton:SetText(zoneFilter)
+    zoneButton:SetText(FieldJournal.UI.zoneFilter)
     zoneButton:SetShown(currentTab == "quests")
     historyButton:SetShown(currentTab == "quests")
     for id, button in pairs(tabButtons) do
         button:GetFontString():SetTextColor(id == currentTab and 0.95 or 0.24,
             id == currentTab and 0.82 or 0.14, id == currentTab and 0.51 or 0.08)
     end
-    local offset = math.min(window.listScroll.offset or 0, math.max(0, #visibleKeys - #rows))
-    window.listScroll.offset = offset
+    local offset = math.min(FieldJournal.UI.window.listScroll.offset or 0, math.max(0, #visibleKeys - #rows))
+    FieldJournal.UI.window.listScroll.offset = offset
     for i, row in ipairs(rows) do
-        local entry = viewItems[visibleKeys[offset + i]]
+        local entry = FieldJournal.UI.viewItems[visibleKeys[offset + i]]
         if entry then
             row.key = entry.key
             row.title:SetText((entry.bookmarked and "★ " or "") .. entry.title)
             local stage = entry.kind == "questGroup" and (entry.active and "In progress" or "Quest")
-                or entry.kind == "encounterGroup" and (#encounters .. " remembered")
+                or entry.kind == "encounterGroup" and (#FieldJournal.encounters .. " remembered")
                 or entry.kind == "note" and "Note" or entry.kind == "speech" and entry.stage
                 or entry.kind == "gossip" and "Conversation" or entry.kind == "kill" and "Encounter"
                 or entry.kind == "lifeDay" and (#(entry.activities or {}) .. " activities · " .. #entry.items .. " records")
                 or entry.kind == "beast" and entry.zone or entry.stage or "Entry"
             row.subtitle:SetText((entry.kind == "beast" or entry.kind == "lifeDay")
                 and stage or (stage .. " · " .. entry.zone))
-            row.selected:SetShown(entry.key == selectedKey)
+            row.selected:SetShown(entry.key == FieldJournal.UI.selectedKey)
             row:Show()
         else
             row.key = nil
             row:Hide()
         end
     end
-    if selectedKey and not viewItems[selectedKey] then selectedKey = nil end
-    showDetail(selectedKey and viewItems[selectedKey] or nil)
+    if FieldJournal.UI.selectedKey and not FieldJournal.UI.viewItems[FieldJournal.UI.selectedKey] then FieldJournal.UI.selectedKey = nil end
+    showDetail(FieldJournal.UI.selectedKey and FieldJournal.UI.viewItems[FieldJournal.UI.selectedKey] or nil)
+end
+
+function FieldJournal.UI.RefreshIfShown()
+    if FieldJournal.UI.window and FieldJournal.UI.window:IsShown() then FieldJournal.UI.Refresh() end
 end
 
 local function createWindow()
-    window = CreateFrame("Frame", "FieldJournalWindow", UIParent)
+    local window = CreateFrame("Frame", "FieldJournalWindow", UIParent)
+    FieldJournal.UI.window = window
     window:SetSize(730, 530)
     window:SetPoint("CENTER")
     window:SetFrameStrata("DIALOG")
@@ -1404,13 +1423,13 @@ local function createWindow()
         button:SetPoint("TOPLEFT", 28 + (index - 1) * 168, -49)
         button:SetScript("OnClick", function()
             currentTab = tab[1]
-            selectedKey = nil
-            searchText = ""
-            zoneFilter = "All zones"
+            FieldJournal.UI.selectedKey = nil
+            FieldJournal.UI.searchText = ""
+            FieldJournal.UI.zoneFilter = "All zones"
             if window.search then window.search:SetText("") end
             window.listScroll.offset = 0
             window.detailScroll:SetVerticalScroll(0)
-            journal:Refresh()
+            FieldJournal.UI.Refresh()
         end)
         tabButtons[tab[1]] = button
     end
@@ -1429,11 +1448,11 @@ local function createWindow()
     searchHint:SetPoint("TOPLEFT", search, "TOPLEFT", 8, -5)
     searchHint:SetText("Search your journal")
     search:SetScript("OnTextChanged", function(self)
-        searchText = clean(self:GetText())
-        searchHint:SetShown(searchText == "")
+        FieldJournal.UI.searchText = clean(self:GetText())
+        searchHint:SetShown(FieldJournal.UI.searchText == "")
         if window.listScroll then
             window.listScroll.offset = 0
-            journal:Refresh()
+            FieldJournal.UI.Refresh()
         end
     end)
 
@@ -1443,11 +1462,11 @@ local function createWindow()
         local list = zones()
         local nextIndex = 1
         for i, zone in ipairs(list) do
-            if zone == zoneFilter then nextIndex = (i % #list) + 1 break end
+            if zone == FieldJournal.UI.zoneFilter then nextIndex = (i % #list) + 1 break end
         end
-        zoneFilter = list[nextIndex]
+        FieldJournal.UI.zoneFilter = list[nextIndex]
         window.listScroll.offset = 0
-        journal:Refresh()
+        FieldJournal.UI.Refresh()
     end)
 
     countText = makeLabel(window, 11, {0.42, 0.31, 0.20})
@@ -1464,7 +1483,7 @@ local function createWindow()
     window.listScroll:EnableMouseWheel(true)
     window.listScroll:SetScript("OnMouseWheel", function(self, delta)
         self.offset = math.max(0, math.min(math.max(0, #visibleKeys - #rows), self.offset - delta * 3))
-        journal:Refresh()
+        FieldJournal.UI.Refresh()
     end)
 
     for i = 1, 8 do
@@ -1483,15 +1502,15 @@ local function createWindow()
         row.subtitle:SetWidth(285)
         row.subtitle:SetMaxLines(1)
         row:SetScript("OnClick", function(self)
-            selectedKey = self.key
-            if questPicker then questPicker:Hide() end
+            FieldJournal.UI.selectedKey = self.key
+            if FieldJournal.UI.questPicker then FieldJournal.UI.questPicker:Hide() end
             window.detailScroll:SetVerticalScroll(0)
-            journal:Refresh()
+            FieldJournal.UI.Refresh()
         end)
         row:EnableMouseWheel(true)
         row:SetScript("OnMouseWheel", function(_, delta)
             window.listScroll.offset = math.max(0, math.min(math.max(0, #visibleKeys - #rows), window.listScroll.offset - delta * 3))
-            journal:Refresh()
+            FieldJournal.UI.Refresh()
         end)
         rows[i] = row
     end
@@ -1516,44 +1535,45 @@ local function createWindow()
     bookmarkButton = makeButton(window, 150, 25, "Bookmark")
     bookmarkButton:SetPoint("BOTTOMLEFT", 390, 28)
     bookmarkButton:SetScript("OnClick", function()
-        local entry = selectedKey and viewItems[selectedKey]
+        local entry = FieldJournal.UI.selectedKey and FieldJournal.UI.viewItems[FieldJournal.UI.selectedKey]
         if entry then
             if entry.kind == "questGroup" then
-                questBookmarks[entry.questID] = not entry.bookmarked or nil
+                FieldJournal.questBookmarks[entry.questID] = not entry.bookmarked or nil
             else
                 entry.bookmarked = not entry.bookmarked
             end
-            journal:Refresh()
+            FieldJournal.UI.Refresh()
         end
     end)
     linkButton = makeButton(window, 150, 25, "Link to quest")
     linkButton:SetPoint("BOTTOMLEFT", 546, 28)
     linkButton:SetScript("OnClick", function()
-        local entry = selectedKey and viewItems[selectedKey]
+        local entry = FieldJournal.UI.selectedKey and FieldJournal.UI.viewItems[FieldJournal.UI.selectedKey]
         if not entry then return end
         if entry.kind == "note" or entry.kind == "speech" or entry.kind == "gossip" or entry.kind == "kill" or entry.kind == "pickup" then
             openQuestPicker()
         elseif relatedKeys[1] then
             relatedIndex = (relatedIndex % #relatedKeys) + 1
-            selectedKey = relatedKeys[relatedIndex]
+            FieldJournal.UI.selectedKey = relatedKeys[relatedIndex]
             scroll:SetVerticalScroll(0)
-            journal:Refresh()
+            FieldJournal.UI.Refresh()
         end
     end)
 
     writeButton = makeButton(window, 306, 25, "Write in the margin")
     writeButton:SetPoint("BOTTOMLEFT", 390, 60)
     writeButton:SetScript("OnClick", function()
-        local entry = selectedKey and viewItems[selectedKey]
+        local entry = FieldJournal.UI.selectedKey and FieldJournal.UI.viewItems[FieldJournal.UI.selectedKey]
         if not entry or entry.kind ~= "questGroup" then return end
-        noteEditor.questID = entry.questID
-        noteEditor.title:SetText("A note on " .. entry.title)
-        noteEditBox:SetText("")
-        noteEditor:Show()
-        noteEditBox:SetFocus()
+        FieldJournal.UI.noteEditor.questID = entry.questID
+        FieldJournal.UI.noteEditor.title:SetText("A note on " .. entry.title)
+        FieldJournal.UI.noteEditBox:SetText("")
+        FieldJournal.UI.noteEditor:Show()
+        FieldJournal.UI.noteEditBox:SetFocus()
     end)
 
-    noteEditor = CreateFrame("Frame", nil, window)
+    local noteEditor = CreateFrame("Frame", nil, window)
+    FieldJournal.UI.noteEditor = noteEditor
     noteEditor:SetSize(306, 265)
     noteEditor:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", -21, 60)
     noteEditor:SetFrameLevel(window:GetFrameLevel() + 20)
@@ -1566,7 +1586,8 @@ local function createWindow()
     noteEditor.title:SetPoint("TOPLEFT", 13, -12)
     noteEditor.title:SetWidth(260)
     noteEditor.title:SetMaxLines(1)
-    noteEditBox = CreateFrame("EditBox", nil, noteEditor)
+    local noteEditBox = CreateFrame("EditBox", nil, noteEditor)
+    FieldJournal.UI.noteEditBox = noteEditBox
     noteEditBox:SetSize(278, 172)
     noteEditBox:SetPoint("TOPLEFT", 14, -44)
     noteEditBox:SetAutoFocus(false)
@@ -1581,17 +1602,18 @@ local function createWindow()
         local body = clean(noteEditBox:GetText())
         if body ~= "" and noteEditor.questID then
             addEntry("margin", noteEditor.questID, "My note", questTitle(noteEditor.questID), body, "")
-            selectedKey = "quest:" .. noteEditor.questID
+            FieldJournal.UI.selectedKey = "quest:" .. noteEditor.questID
         end
         noteEditor:Hide()
-        journal:Refresh()
+        FieldJournal.UI.Refresh()
     end)
     local cancelNote = makeButton(noteEditor, 130, 25, "Cancel")
     cancelNote:SetPoint("BOTTOMRIGHT", -14, 12)
     cancelNote:SetScript("OnClick", function() noteEditor:Hide() end)
     noteEditor:Hide()
 
-    questPicker = CreateFrame("Frame", nil, window)
+    local questPicker = CreateFrame("Frame", nil, window)
+    FieldJournal.UI.questPicker = questPicker
     questPicker:SetSize(306, 300)
     questPicker:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", -21, 60)
     questPicker:SetFrameLevel(window:GetFrameLevel() + 20)
@@ -1612,11 +1634,11 @@ local function createWindow()
         row:SetPoint("TOPLEFT", 14, -45 - (index - 1) * 31)
         row:SetScript("OnClick", function(self)
             local option = self.option
-            local entry = selectedKey and entries[selectedKey]
+            local entry = FieldJournal.UI.selectedKey and FieldJournal.entries[FieldJournal.UI.selectedKey]
             if not option or not entry then return end
             entry.linkedQuestID = option.remove and nil or option.id
             questPicker:Hide()
-            journal:Refresh()
+            FieldJournal.UI.Refresh()
         end)
         row:EnableMouseWheel(true)
         row:SetScript("OnMouseWheel", function(_, delta)
@@ -1636,7 +1658,7 @@ local function createWindow()
     window:SetScript("OnShow", function()
         if initializeCharacter then initializeCharacter() end
         syncActiveQuestLog()
-        journal:Refresh()
+        FieldJournal.UI.Refresh()
     end)
 end
 
@@ -1658,6 +1680,7 @@ local function mergeList(target, source, identity)
 end
 
 local function mergeCharacterCollections(key, source)
+    local db = FieldJournal.db
     if type(source) ~= "table" then return end
     db.characters[key] = db.characters[key] or {}
     for entryKey, entry in pairs(source.entries or {}) do
@@ -1701,6 +1724,7 @@ local function mergeCharacterCollections(key, source)
 end
 
 local function mergeAccountRecovery(source)
+    local db = FieldJournal.db
     if type(source) ~= "table" or type(source.characters) ~= "table" then return end
     for key, savedEntries in pairs(source.characters) do
         mergeCharacterCollections(key, {
@@ -1714,32 +1738,40 @@ local function mergeAccountRecovery(source)
     db.nextOrder = math.max(db.nextOrder or 0, source.nextOrder or 0)
 end
 
+FieldJournal.mergeList = mergeList
+FieldJournal.mergeCharacterCollections = mergeCharacterCollections
+FieldJournal.mergeAccountRecovery = mergeAccountRecovery
+
 initializeCharacter = function()
+    local db = FieldJournal.db
     if not db then return end
     local key = savedCharacterKey()
-    if loadedCharacterKey == key and entries and bestiary then return end
+    if FieldJournal.loadedCharacterKey == key and FieldJournal.entries and FieldJournal.bestiary then return end
     if FieldJournalCharacterDB and (not FieldJournalCharacterDB.key or FieldJournalCharacterDB.key == key) then
         mergeCharacterCollections(key, FieldJournalCharacterDB)
     end
-    loadedCharacterKey = key
+    FieldJournal.loadedCharacterKey = key
     db.characters[key] = db.characters[key] or {}
-    entries = db.characters[key]
+    FieldJournal.entries = db.characters[key]
     db.objectiveStates[key] = db.objectiveStates[key] or {}
-    objectiveState = db.objectiveStates[key]
+    FieldJournal.objectiveState = db.objectiveStates[key]
     db.questBookmarks[key] = db.questBookmarks[key] or {}
-    questBookmarks = db.questBookmarks[key]
+    FieldJournal.questBookmarks = db.questBookmarks[key]
     db.encounters[key] = db.encounters[key] or {}
-    encounters = db.encounters[key]
+    FieldJournal.encounters = db.encounters[key]
     db.diaryEvents[key] = db.diaryEvents[key] or {}
-    diaryEvents = db.diaryEvents[key]
+    FieldJournal.diaryEvents = db.diaryEvents[key]
     db.craftEvents[key] = db.craftEvents[key] or {}
-    craftEvents = db.craftEvents[key]
+    FieldJournal.craftEvents = db.craftEvents[key]
     db.bestiary[key] = db.bestiary[key] or {}
-    bestiary = db.bestiary[key]
+    FieldJournal.bestiary = db.bestiary[key]
     FieldJournalCharacterDB = {
-        key = key, entries = entries, encounters = encounters, diaryEvents = diaryEvents,
-        craftEvents = craftEvents, bestiary = bestiary,
+        key = key, entries = FieldJournal.entries, encounters = FieldJournal.encounters,
+        diaryEvents = FieldJournal.diaryEvents, craftEvents = FieldJournal.craftEvents,
+        bestiary = FieldJournal.bestiary,
     }
+    local entries, encounters, bestiary, questBookmarks =
+        FieldJournal.entries, FieldJournal.encounters, FieldJournal.bestiary, FieldJournal.questBookmarks
     groupSnapshot = currentGroup()
 
     -- Reconcile the derived index with the persistent encounter log on every load.
@@ -1789,7 +1821,7 @@ initializeCharacter = function()
             entry.body = recoveredBody(entry.questID)
         end
     end
-    if not window then createWindow() end
+    if not FieldJournal.UI.window then createWindow() end
     syncActiveQuestLog()
     observeUnit("target")
 end
@@ -1799,28 +1831,28 @@ SLASH_FIELDJOURNAL2 = "/fj"
 SlashCmdList.FIELDJOURNAL = function(message)
     local command, remainder = (message or ""):match("^(%S+)%s*(.-)%s*$")
     if command == "repair" then
-        loadedCharacterKey = nil
+        FieldJournal.loadedCharacterKey = nil
         initializeCharacter()
-        if window and window:IsShown() then journal:Refresh() end
+    FieldJournal.UI.RefreshIfShown()
         print("Field Journal: restored the bestiary index from saved encounters where needed.")
         return
     end
     if command == "status" then
         initializeCharacter()
         local function listens(eventName)
-            return journal.IsEventRegistered and journal:IsEventRegistered(eventName) and "on" or "off"
+            return FieldJournal.frame.IsEventRegistered and FieldJournal.frame:IsEventRegistered(eventName) and "on" or "off"
         end
         local species = 0
-        for _ in pairs(bestiary or {}) do species = species + 1 end
+        for _ in pairs(FieldJournal.bestiary or {}) do species = species + 1 end
         local recoveries = (FieldJournalRecoveryDB and 1 or 0)
             + (FieldJournalRecoveryDB2 and 1 or 0) + (FieldJournalRecoveryDB3 and 1 or 0)
         print("Field Journal: PARTY_KILL " .. listens("PARTY_KILL")
             .. ", UNIT_DIED " .. listens("UNIT_DIED")
-            .. ", encounters " .. tostring(encounters and #encounters or 0)
+            .. ", encounters " .. tostring(FieldJournal.encounters and #FieldJournal.encounters or 0)
             .. ", bestiary species " .. species
-            .. ", craft events " .. tostring(craftEvents and #craftEvents or 0)
+            .. ", craft events " .. tostring(FieldJournal.craftEvents and #FieldJournal.craftEvents or 0)
             .. ", recovery snapshots " .. recoveries
-            .. ", character " .. tostring(loadedCharacterKey or "not loaded") .. ".")
+            .. ", character " .. tostring(FieldJournal.loadedCharacterKey or "not loaded") .. ".")
         return
     end
     if command == "remember" or command == "note" then
@@ -1837,45 +1869,46 @@ SlashCmdList.FIELDJOURNAL = function(message)
         print("Field Journal: recorded " .. clean(title) .. ".")
         return
     end
-    if not window then createWindow() end
-    if window:IsShown() then window:Hide() else window:Show() end
+    if not FieldJournal.UI.window then createWindow() end
+    if FieldJournal.UI.window:IsShown() then FieldJournal.UI.window:Hide() else FieldJournal.UI.window:Show() end
 end
 
-journal:RegisterEvent("ADDON_LOADED")
-journal:RegisterEvent("PLAYER_LOGIN")
-journal:RegisterEvent("PLAYER_ENTERING_WORLD")
-journal:RegisterEvent("QUEST_DETAIL")
-journal:RegisterEvent("QUEST_PROGRESS")
-journal:RegisterEvent("QUEST_COMPLETE")
-journal:RegisterEvent("QUEST_ACCEPTED")
-journal:RegisterEvent("QUEST_TURNED_IN")
-journal:RegisterEvent("QUEST_LOG_UPDATE")
-journal:RegisterEvent("GOSSIP_SHOW")
-journal:RegisterEvent("ITEM_TEXT_BEGIN")
-journal:RegisterEvent("ITEM_TEXT_READY")
-journal:RegisterEvent("ITEM_TEXT_CLOSED")
-journal:RegisterEvent("CHAT_MSG_MONSTER_SAY")
-journal:RegisterEvent("CHAT_MSG_MONSTER_YELL")
-journal:RegisterEvent("CHAT_MSG_MONSTER_WHISPER")
-journal:RegisterEvent("PLAYER_REGEN_ENABLED")
-journal:RegisterEvent("PLAYER_REGEN_DISABLED")
-journal:RegisterEvent("PLAYER_TARGET_CHANGED")
+FieldJournal.frame:RegisterEvent("ADDON_LOADED")
+FieldJournal.frame:RegisterEvent("PLAYER_LOGIN")
+FieldJournal.frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+FieldJournal.frame:RegisterEvent("QUEST_DETAIL")
+FieldJournal.frame:RegisterEvent("QUEST_PROGRESS")
+FieldJournal.frame:RegisterEvent("QUEST_COMPLETE")
+FieldJournal.frame:RegisterEvent("QUEST_ACCEPTED")
+FieldJournal.frame:RegisterEvent("QUEST_TURNED_IN")
+FieldJournal.frame:RegisterEvent("QUEST_LOG_UPDATE")
+FieldJournal.frame:RegisterEvent("GOSSIP_SHOW")
+FieldJournal.frame:RegisterEvent("ITEM_TEXT_BEGIN")
+FieldJournal.frame:RegisterEvent("ITEM_TEXT_READY")
+FieldJournal.frame:RegisterEvent("ITEM_TEXT_CLOSED")
+FieldJournal.frame:RegisterEvent("CHAT_MSG_MONSTER_SAY")
+FieldJournal.frame:RegisterEvent("CHAT_MSG_MONSTER_YELL")
+FieldJournal.frame:RegisterEvent("CHAT_MSG_MONSTER_WHISPER")
+FieldJournal.frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+FieldJournal.frame:RegisterEvent("PLAYER_REGEN_DISABLED")
+FieldJournal.frame:RegisterEvent("PLAYER_TARGET_CHANGED")
 for _, event in ipairs({"LOOT_OPENED", "LOOT_READY", "LOOT_SLOT_CLEARED", "LOOT_CLOSED",
     "TRAINER_SHOW", "TRAINER_CLOSED", "LEARNED_SPELL_IN_TAB", "LEARNED_SPELL_IN_SKILL_LINE",
     "CHAT_MSG_SKILL", "CHAT_MSG_TRADESKILLS", "TRADE_SKILL_ITEM_CRAFTED_RESULT",
     "GROUP_ROSTER_UPDATE", "MERCHANT_SHOW", "MERCHANT_CLOSED", "BAG_UPDATE_DELAYED", "PLAYER_MONEY"}) do
-    pcall(journal.RegisterEvent, journal, event)
+    pcall(FieldJournal.frame.RegisterEvent, FieldJournal.frame, event)
 end
-local partyKillRegistered = pcall(journal.RegisterEvent, journal, "PARTY_KILL")
-local unitDiedRegistered = pcall(journal.RegisterEvent, journal, "UNIT_DIED")
-pcall(journal.RegisterEvent, journal, "UPDATE_MOUSEOVER_UNIT")
-pcall(journal.RegisterEvent, journal, "NAME_PLATE_UNIT_ADDED")
-journal:SetScript("OnEvent", function(_, event, ...)
+local partyKillRegistered = pcall(FieldJournal.frame.RegisterEvent, FieldJournal.frame, "PARTY_KILL")
+local unitDiedRegistered = pcall(FieldJournal.frame.RegisterEvent, FieldJournal.frame, "UNIT_DIED")
+pcall(FieldJournal.frame.RegisterEvent, FieldJournal.frame, "UPDATE_MOUSEOVER_UNIT")
+pcall(FieldJournal.frame.RegisterEvent, FieldJournal.frame, "NAME_PLATE_UNIT_ADDED")
+FieldJournal.frame:SetScript("OnEvent", function(_, event, ...)
     local name = ...
     if event == "ADDON_LOADED" then
         if name ~= addonName then return end
         FieldJournalDB = FieldJournalDB or {version = 1, nextOrder = 0, characters = {}}
-        db = FieldJournalDB
+        FieldJournal.db = FieldJournalDB
+        local db = FieldJournal.db
         db.nextOrder = db.nextOrder or 0
         db.characters = db.characters or {}
         db.objectiveStates = db.objectiveStates or {}
@@ -1888,7 +1921,7 @@ journal:SetScript("OnEvent", function(_, event, ...)
         mergeAccountRecovery(FieldJournalRecoveryDB)
         mergeAccountRecovery(FieldJournalRecoveryDB2)
         mergeAccountRecovery(FieldJournalRecoveryDB3)
-        recoveredQuestText = FieldJournalQuestText or {}
+        FieldJournal.recoveredQuestText = FieldJournalQuestText or {}
     elseif event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
         initializeCharacter()
         if event == "PLAYER_LOGIN" and not partyKillRegistered and not unitDiedRegistered then
