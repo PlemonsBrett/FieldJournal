@@ -27,9 +27,18 @@
 -- back up the damage, and after five such logins would have rotated every good
 -- snapshot out -- destroying the only copy at exactly the moment it is needed.
 -- shouldCapture below therefore also refuses when the live data has LOST
--- records relative to the newest snapshot, and says so in chat. That is the
--- same class of bug as the "backup mirror wiped on a failed migration" defect
--- caught in Plan 3a review, and it is guarded here for the same reason.
+-- records relative to its baseline snapshot, and says so in chat. That baseline
+-- is the newest snapshot in the ring that can actually be READ -- shouldCapture
+-- walks newest to oldest and stops at the first parseable one, so a single
+-- garbage newest snapshot cannot silently disable the guard while slots 2-5
+-- still hold good history. It only gives up and answers "first" when no
+-- snapshot in the ring is parseable at all. One consequence worth knowing: if
+-- ring[1] is garbage but ring[2] matches the live counts exactly, the verdict
+-- is "identical" and no fresh snapshot is prepended in front of the garbage
+-- one -- safe, because nothing is lost and nothing rotates, and the ring still
+-- holds the same readable history. That is the same class of bug as the
+-- "backup mirror wiped on a failed migration" defect caught in Plan 3a review,
+-- and it is guarded here for the same reason.
 --
 -- WHAT THE RING DOES NOT PROTECT AGAINST. It lives inside FieldJournalDB --
 -- the same account saved-variables file whose loss motivated this whole phase.
@@ -342,11 +351,12 @@ local function performRepair(charData, h)
         end
     end
 
-    -- droppedTotal counts every placeholder removed this call, including ones
-    -- the merge itself just reintroduced -- it is intentionally not what gets
-    -- reported. Only placeholders present in preExistingPast (i.e. genuinely
-    -- live before this call) and now gone count toward the reported total.
-    local droppedTotal = Backup.dropSupersededPlaceholders(charData)
+    -- dropSupersededPlaceholders removes every superseded placeholder, including
+    -- ones the merge itself just reintroduced, and its return count is therefore
+    -- deliberately discarded rather than reported. Only placeholders present in
+    -- preExistingPast (i.e. genuinely live before this call) and now gone count
+    -- toward the reported total.
+    Backup.dropSupersededPlaceholders(charData)
     local dropped = 0
     for key in pairs(preExistingPast) do
         if charData.entries[key] == nil then

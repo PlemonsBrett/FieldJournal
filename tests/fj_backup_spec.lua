@@ -308,7 +308,7 @@ local function test_capture_falls_back_to_the_first_readable_snapshot_when_the_n
     -- hand-edited or partially-written saved-variables entry.
     charData.backups[1] = {at = 999, counts = "not a table", data = "also not a table"}
 
-    -- Shrink relative to ring[2]'s good baseline (encounters == 2): drop to 0.
+    -- Shrink relative to ring[2]'s good baseline (encounters == 2): drop to 1.
     table.remove(charData.encounters)
     table.remove(charData.encounters)
 
