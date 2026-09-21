@@ -18,6 +18,7 @@ Core/Bootstrap.lua
 Core/Database.lua
 Core/Migrations.lua
 Core/Backup.lua
+Core/Export.lua
 Core/SlashCommands.lua
 Core/DevTools.lua
 Data/QuestLog.lua
