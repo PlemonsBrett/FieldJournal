@@ -294,6 +294,24 @@ end
 local function performImport(charData, payload, h)
     local before = h.counts(charData)
 
+    -- Snapshot which past:<questID> placeholders are already live BEFORE the
+    -- merge. A merge can add the real kind == "quest" capture for a quest whose
+    -- placeholder is already live (either because the import itself carries
+    -- that capture, or because the target already had it) and
+    -- dropSupersededPlaceholders below then removes that placeholder in the
+    -- same call -- a +1/-1 to the entries count that nets to zero even though
+    -- real data changed (a placeholder was replaced by real text). Only a
+    -- placeholder that was ALREADY live before this call, and is gone
+    -- afterwards, counts as a genuine, reportable drop.
+    local preExistingPast = {}
+    if type(charData.entries) == "table" then
+        for key in pairs(charData.entries) do
+            if type(key) == "string" and key:sub(1, 5) == "past:" then
+                preExistingPast[key] = true
+            end
+        end
+    end
+
     -- 1. The merge always gets a DEEP COPY. Migrations.mergeIntoCharacter
     --    inserts source record tables by reference (target[#target + 1] = record,
     --    target.entries[key] = entry, target.bestiary[key] = incoming), so
@@ -312,13 +330,24 @@ local function performImport(charData, payload, h)
     --    same quest twice with no error and no log line.
     h.dropSupersededPlaceholders(charData)
 
+    -- dropSupersededPlaceholders removes every superseded placeholder, including
+    -- ones the merge itself just introduced; only placeholders present in
+    -- preExistingPast (i.e. genuinely live before this call) and now gone count
+    -- toward the reported total.
+    local dropped = 0
+    for key in pairs(preExistingPast) do
+        if charData.entries[key] == nil then
+            dropped = dropped + 1
+        end
+    end
+
     -- 3. Lift nextOrder above everything just imported. All six capture paths in
     --    Data/ do nextOrder = nextOrder + 1, so without this the next new record
     --    can collide with an imported one and sort wrongly.
     local importedNextOrder = tonumber(payload.data.nextOrder) or 0
     charData.nextOrder = math.max(charData.nextOrder or 0, importedNextOrder, h.highestOrder(charData))
 
-    return before, h.counts(charData)
+    return before, h.counts(charData), dropped
 end
 
 --- Decode, validate and merge one export string into this character. Returns
@@ -354,7 +383,7 @@ function Export.importString(charData, text)
         print(Export.message("importerror", tostring(results[2])))
         return false, "error"
     end
-    local before, after = results[2], results[3]
+    local before, after, dropped = results[2], results[3], results[4]
 
     local gained = {}
     for _, counted in ipairs(COUNTED) do
@@ -362,11 +391,17 @@ function Export.importString(charData, text)
         if delta > 0 then gained[#gained + 1] = delta .. " " .. counted.label end
     end
 
-    if #gained == 0 then
+    if #gained == 0 and dropped == 0 then
         print(Export.message("nothing"))
         return false, "nothing"
     end
 
-    print("Field Journal: imported " .. table.concat(gained, ", ") .. ".")
+    if #gained > 0 then
+        print("Field Journal: imported " .. table.concat(gained, ", ") .. ".")
+    end
+    if dropped > 0 then
+        print("Field Journal: dropped " .. dropped
+            .. " earlier-quest placeholder(s) this import already had a real capture for.")
+    end
     return true, "imported"
 end

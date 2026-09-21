@@ -246,7 +246,42 @@ local function test_import_merges_a_deep_copy_and_never_aliases()
     local text = fj.Export.encode(populated())
 
     local target = freshChar()
+
+    -- Intercept both what importString decodes internally (never exposed to the
+    -- caller -- a second independent Export.decode of the same string proves
+    -- nothing, since that is always a different Lua table regardless of whether
+    -- performImport deep-copies before merging) and what it actually hands to
+    -- Migrations.mergeIntoCharacter. Comparing the merge's source against the
+    -- LIVE record after the merge would prove nothing either: mergeEntries fills
+    -- in a key the target is missing by plain reference assignment
+    -- (target.entries[key] = entry), so whatever table performImport hands to
+    -- mergeIntoCharacter necessarily BECOMES the live record by identity, deep
+    -- copy or not -- that equality holds even with the aliasing bug fully fixed.
+    -- The only way to actually observe the deep copy is to compare the source
+    -- handed to the merge against the ORIGINAL decoded payload's own record: if
+    -- performImport skipped the deep copy, those two are the exact same table;
+    -- if it deep-copied, they are equal in content but distinct tables. Wrapping
+    -- the real functions and restoring them afterwards (the same
+    -- save-and-restore idiom capturePrint above uses for print) observes both.
+    local capturedPayload
+    local realDecode = fj.Export.decode
+    fj.Export.decode = function(...)
+        local payload, reason = realDecode(...)
+        capturedPayload = payload
+        return payload, reason
+    end
+
+    local capturedSource
+    local realMerge = fj.Migrations.mergeIntoCharacter
+    fj.Migrations.mergeIntoCharacter = function(t, source, label)
+        capturedSource = source
+        return realMerge(t, source, label)
+    end
+
     local lines, imported = quietly(fj.Export.importString, target, text)
+    fj.Export.decode = realDecode
+    fj.Migrations.mergeIntoCharacter = realMerge
+
     assert(imported == true, "a valid export must import, chat was:\n" .. table.concat(lines, "\n"))
     assert(target.entries["quest:10"].body == "I found it.", "the entry must arrive")
     assert(#target.encounters == 1, "the encounter must arrive")
@@ -260,12 +295,45 @@ local function test_import_merges_a_deep_copy_and_never_aliases()
     assert(table.concat(lines, "\n"):find("imported 2 entries, 1 encounters", 1, true),
         "expected the import report, got:\n" .. table.concat(lines, "\n"))
 
-    -- Migrations.mergeIntoCharacter inserts source record tables by reference,
-    -- so importing the decoded payload itself would leave live records aliased
-    -- to tables this session also still holds.
-    local payload = fj.Export.decode(text)
-    assert(target.entries["quest:10"] ~= payload.data.entries["quest:10"],
-        "an imported record must never be the same table as a decoded payload's record")
+    assert(type(capturedPayload) == "table" and type(capturedPayload.data) == "table",
+        "Export.decode must have been called")
+    assert(type(capturedSource) == "table", "mergeIntoCharacter must have been called")
+    assert(capturedSource.entries["quest:10"] ~= capturedPayload.data.entries["quest:10"],
+        "the table handed to mergeIntoCharacter must not be the same table as the decoded payload's own record -- " ..
+        "importString must deep-copy the decoded payload before merging, never merge it directly")
+end
+
+local function test_import_reports_a_placeholder_supersession_as_a_change()
+    local fj = load()
+
+    -- The export carries the REAL capture for quest 11 -- not the same fixture
+    -- populated() uses (that quest is 10; its placeholder is for quest 11).
+    local source = freshChar()
+    source.nextOrder = 5
+    source.entries["quest:11"] = {key = "quest:11", kind = "quest", questID = 11,
+        title = "An Older Errand", body = "The real captured text.", order = 3}
+    local text = fj.Export.encode(source)
+
+    -- The target already has ONLY the recovered-description placeholder for
+    -- quest 11, genuinely live before the import. Merging the real capture in
+    -- adds one entry (+1) and dropSupersededPlaceholders removes the
+    -- now-superseded placeholder (-1) in the same call -- a net-zero entries
+    -- delta even though real data changed (the placeholder text was replaced by
+    -- the real capture, and nextOrder moved). This must still be reported as a
+    -- change, not "nothing changed".
+    local target = freshChar()
+    target.entries["past:11"] = {key = "past:11", kind = "pastQuest", questID = 11,
+        title = "An Older Errand", body = "Recovered description", order = 1}
+
+    local lines, imported, reason = quietly(fj.Export.importString, target, text)
+    local chat = table.concat(lines, "\n")
+    assert(imported == true,
+        "a genuine placeholder supersession must be reported as a change, got "
+            .. tostring(reason) .. "; chat was:\n" .. chat)
+    assert(target.entries["past:11"] == nil, "the superseded placeholder must be dropped")
+    assert(target.entries["quest:11"].body == "The real captured text.", "the real capture must arrive")
+    assert(chat:find("dropped 1 earlier-quest placeholder", 1, true),
+        "expected a dropped-placeholder line, got:\n" .. chat)
 end
 
 local function test_import_drops_superseded_placeholders()
@@ -371,6 +439,7 @@ return {
     test_describe_payload_names_the_character_the_date_and_the_counts = test_describe_payload_names_the_character_the_date_and_the_counts,
     test_export_is_safe_without_a_database = test_export_is_safe_without_a_database,
     test_import_merges_a_deep_copy_and_never_aliases = test_import_merges_a_deep_copy_and_never_aliases,
+    test_import_reports_a_placeholder_supersession_as_a_change = test_import_reports_a_placeholder_supersession_as_a_change,
     test_import_drops_superseded_placeholders = test_import_drops_superseded_placeholders,
     test_import_is_idempotent = test_import_is_idempotent,
     test_import_never_overwrites_an_existing_record = test_import_never_overwrites_an_existing_record,
