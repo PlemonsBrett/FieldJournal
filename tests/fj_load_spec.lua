@@ -40,7 +40,8 @@ local function test_all_modules_load_into_one_namespace()
     assert(fj.mergeCharacterCollections == nil, "mergeCharacterCollections moved to Migrations.mergeIntoCharacter")
     assert(fj.mergeAccountRecovery == nil, "mergeAccountRecovery moved to Migrations.accountSlice")
     assertFunctions(fj.UI, "FieldJournal.UI", {"Refresh", "RefreshIfShown"})
-    assertFunctions(fj.UI, "FieldJournal.UI", {"makeLabel", "coloredRectangle", "makeButton"})
+    assertFunctions(fj.UI, "FieldJournal.UI",
+        {"makeLabel", "coloredRectangle", "makeButton", "showCopyBox", "showPasteBox"})
     assertFunctions(fj.UI, "FieldJournal.UI",
         {"questOptions", "refreshQuestPicker", "openQuestPicker", "createNoteEditor", "createQuestPicker"})
     assertFunctions(fj.UI, "FieldJournal.UI",
@@ -158,8 +159,35 @@ local function test_slash_commands_are_registered()
     assert(fj ~= nil, "the namespace must still be returned")
 end
 
+-- The string dialog behind /fj export and /fj import cannot be BUILT under this
+-- harness: UI/Widgets.lua's helpers call the real CreateFontString, SetFont and
+-- SetColorTexture, and tests/wow_env.lua's frames are no-ops. What can be proved
+-- here is the contract that actually protects the player: both helpers run
+-- inside a slash command, so neither may ever raise -- a client that refuses a
+-- frame call must produce a chat line and a false return, not a Lua error popup.
+local function test_the_string_dialog_helpers_never_throw_without_a_real_client()
+    local fj = env.loadModules(MODULES)
+    local captured = {}
+    local original = print
+    _G.print = function(...) captured[#captured + 1] = tostring((...)) end
+    local copyOk, copyErr = pcall(fj.UI.showCopyBox, "Field Journal export", "hint", "abc")
+    local pasteOk, pasteErr = pcall(fj.UI.showPasteBox, "Field Journal import", "hint", function() end)
+    _G.print = original
+
+    assert(copyOk, "showCopyBox raised instead of degrading: " .. tostring(copyErr))
+    assert(pasteOk, "showPasteBox raised instead of degrading: " .. tostring(pasteErr))
+    assert(copyErr == false, "showCopyBox must report failure as false, got " .. tostring(copyErr))
+    assert(pasteErr == false, "showPasteBox must report failure as false, got " .. tostring(pasteErr))
+    assert(#captured == 2, "each helper must explain itself exactly once, got " .. #captured)
+    assert(captured[1]:find("export window could not be opened", 1, true),
+        "unexpected export failure line: " .. captured[1])
+    assert(captured[2]:find("import window could not be opened", 1, true),
+        "unexpected import failure line: " .. captured[2])
+end
+
 return {
     test_all_modules_load_into_one_namespace = test_all_modules_load_into_one_namespace,
+    test_the_string_dialog_helpers_never_throw_without_a_real_client = test_the_string_dialog_helpers_never_throw_without_a_real_client,
     test_refresh_if_shown_is_safe_without_a_window = test_refresh_if_shown_is_safe_without_a_window,
     test_window_position_round_trips_through_the_profile = test_window_position_round_trips_through_the_profile,
     test_window_position_defaults_to_center_without_a_saved_point = test_window_position_defaults_to_center_without_a_saved_point,
