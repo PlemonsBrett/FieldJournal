@@ -150,6 +150,7 @@ local function test_survives_malformed_legacy_data()
     local charData = freshChar()
     local broken = legacyAccount()
     broken.characters[KEY] = "this is not a table"
+    broken.objectiveStates[KEY] = "this is not a table either"
     broken.encounters[KEY] = {"neither is this"}
     broken.bestiary[KEY] = {["creature:1"] = 42}
 
@@ -160,8 +161,10 @@ local function test_survives_malformed_legacy_data()
     assert(type(charData.entries) == "table", "the affected collection must be left empty, not nil")
     assert(#charData.diaryEvents == 1, "a readable collection must still migrate")
     local joined = table.concat(lines, "\n")
-    assert(joined:find("malformed legacy.*entries"),
-        "expected a specific malformed-entries warning, got:\n" .. joined)
+    assert(joined:find("malformed legacy.*characters"),
+        "expected a specific malformed-characters warning, got:\n" .. joined)
+    assert(joined:find("malformed legacy.*objectiveStates"),
+        "expected a specific malformed-objectiveStates warning, got:\n" .. joined)
 end
 
 local function test_distinguishes_reused_guids_from_true_cross_source_duplicates()
