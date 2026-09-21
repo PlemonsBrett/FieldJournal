@@ -19,13 +19,12 @@ This is beta software, developed and tested against one live account. The codeba
 
 Journal data is stored per character via AceDB-3.0 (`FieldJournalDB.char`). Existing data from before this migration is imported automatically, once, the first time each character logs in — see [CHANGELOG.md](CHANGELOG.md) for details. The old data is never deleted, only read, so it remains a fallback if anything about the migration ever needs to be redone.
 
-Each character also keeps a rotating ring of five automatic backup snapshots, taken at login, plus a second complete copy in its own per-character saved-variables file. `/fj repair` restores from those snapshots. There is still no manual export/import, and no guarantee that a manual edit to an entry survives auto-regeneration or a future merge — see Roadmap below.
+Each character also keeps a rotating ring of five automatic backup snapshots, taken at login, plus a second complete copy in its own per-character saved-variables file. `/fj repair` restores from those snapshots, and `/fj export` / `/fj import` move a journal in and out of the game as a copy-pasteable string. There is still no guarantee that a manual edit to an entry survives auto-regeneration or a future merge — see Roadmap below.
 
 ## Roadmap
 
 This follows a phased resilience plan (`docs/superpowers/specs/2026-09-19-phase1-resilience-design.md` in this repo's history, not distributed with the addon). See the [milestones](https://github.com/PlemonsBrett/FieldJournal/milestones) and [open issues](https://github.com/PlemonsBrett/FieldJournal/issues) for what's up for grabs — issues labeled [`good first issue`](https://github.com/PlemonsBrett/FieldJournal/labels/good%20first%20issue) are small, self-contained, and don't need deep addon-development experience.
 
-- **Export / Import** — a manual `/fj export` / `/fj import` safety valve so players can back up or transfer their own data without touching SavedVariables files directly.
 - **Edit-safety guarantees** — a per-record `edited` flag so a manual correction (via the note editor) is never silently overwritten by auto-regeneration, a merge, or a backup restore.
 - **Repository polish** — a CLAUDE.md for future coding-agent sessions, once the data layer above has proven stable. (Contribution guidelines now live in [CONTRIBUTING.md](CONTRIBUTING.md).)
 - **Phase 2 (UI/UX) and Phase 3 (visual polish, art)** — exploratory, no design work started; see the open issues.
@@ -61,6 +60,8 @@ Publishing that draft (GitHub → Releases → Edit draft → Publish) is what u
 ## Saved data
 
 WoW writes `FieldJournalDB` to the account's `WTF/Account/<account>/SavedVariables/FieldJournal.lua` on `/reload` and logout, and a complete per-character second copy to `WTF/Account/<account>/<realm>/<character>/SavedVariables/FieldJournal.lua`. `/fj status` prints the current character key, schema version, migration state, saved encounter/bestiary/crafting counts, and how full the backup ring is. `/fj backup` lists the five rotating snapshots; `/fj backup now` takes one on the spot. If data looks missing, or the bestiary list appears empty, use `/fj repair`: it merges anything the backup ring still has back in, then rebuilds the bestiary index from the encounter history. Repairing is safe to run more than once — it never overwrites or duplicates what is already there. Do not replace the live SavedVariables file while the game is running.
+
+For a copy that lives outside the game entirely, use `/fj export`: it shows this character's whole journal as one printable string, already selected, so Ctrl-C copies it straight into a text file. `/fj import` opens a box to paste one back into — it validates the string before merging anything, merges rather than replaces (your own records always win), and is safe to run twice. The backup ring is not part of an export; each character keeps its own.
 
 ## Earlier quest text
 
