@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.3-beta
+
+### Fixed
+
+- Name legacy fields in migration warnings
+
 ## 0.8.2-beta
 
 ### Added
