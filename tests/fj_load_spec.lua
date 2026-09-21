@@ -66,7 +66,8 @@ local function test_all_modules_load_into_one_namespace()
     assert(fj.Backup.SNAPSHOT_LIMIT == 5, "the rotating ring must keep five snapshots")
     assert(type(fj.Export) == "table", "FieldJournal.Export is missing")
     assertFunctions(fj.Export, "FieldJournal.Export",
-        {"message", "buildPayload", "encode", "decode", "validate", "describePayload"})
+        {"message", "buildPayload", "encode", "decode", "validate", "describePayload",
+         "importString"})
     assert(fj.Export.ADDON_TAG == "FieldJournal", "the export addon tag changed")
     assert(fj.Export.PAYLOAD_VERSION == 1, "the export payload format version changed")
     assertFunctions(fj.QuestLog, "FieldJournal.QuestLog",

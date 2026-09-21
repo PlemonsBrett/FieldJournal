@@ -286,3 +286,87 @@ function Export.describePayload(payload)
         .. " on " .. (at and date("%Y-%m-%d %H:%M", at) or "an unknown date")
         .. " (" .. described .. ")"
 end
+
+-- The three things every merge of older data into a live journal must do, and
+-- the reason each exists. All three are exactly what Core/Backup.lua's restore
+-- does, because an export string is a snapshot taken at an earlier moment in
+-- precisely the way a ring snapshot is.
+local function performImport(charData, payload, h)
+    local before = h.counts(charData)
+
+    -- 1. The merge always gets a DEEP COPY. Migrations.mergeIntoCharacter
+    --    inserts source record tables by reference (target[#target + 1] = record,
+    --    target.entries[key] = entry, target.bestiary[key] = incoming), so
+    --    merging payload.data itself would make live records and the decoded
+    --    payload's records the same Lua tables -- a later edit to an imported
+    --    record would rewrite the payload this session still holds, and WoW's
+    --    saved-variables writer, which does not preserve shared references,
+    --    would write each imported record twice.
+    h.mergeIntoCharacter(charData, h.deepCopy(payload.data), "imported journal")
+
+    -- 2. Re-apply Data/QuestLog.lua addEntry's own rule
+    --        if kind == "quest" and id then entries["past:" .. id] = nil end
+    --    mergeEntries fills in any entry key the target is missing, so an import
+    --    otherwise resurrects every recovered-description placeholder the player
+    --    has already replaced with a real capture, and the Quests tab lists the
+    --    same quest twice with no error and no log line.
+    h.dropSupersededPlaceholders(charData)
+
+    -- 3. Lift nextOrder above everything just imported. All six capture paths in
+    --    Data/ do nextOrder = nextOrder + 1, so without this the next new record
+    --    can collide with an imported one and sort wrongly.
+    local importedNextOrder = tonumber(payload.data.nextOrder) or 0
+    charData.nextOrder = math.max(charData.nextOrder or 0, importedNextOrder, h.highestOrder(charData))
+
+    return before, h.counts(charData)
+end
+
+--- Decode, validate and merge one export string into this character. Returns
+--  imported, reason. Prints its own report on every path. Never throws.
+--
+--  Nothing is merged until decode AND validate have both succeeded: a foreign,
+--  truncated or schema-incompatible string leaves the journal byte-identical and
+--  says why. This is the one code path where data of unknown provenance reaches
+--  the journal, so the rejection is the feature.
+function Export.importString(charData, text)
+    local h = helpers()
+    if not h or type(charData) ~= "table" then
+        print(Export.message("unavailable"))
+        return false, "unavailable"
+    end
+
+    local payload, reason = Export.decode(text)
+    if not payload then
+        print(Export.message(reason))
+        return false, reason
+    end
+
+    local ok, invalidReason, detail = Export.validate(payload)
+    if not ok then
+        print(Export.message(invalidReason, detail))
+        return false, invalidReason
+    end
+
+    print("Field Journal: importing a journal " .. Export.describePayload(payload) .. ".")
+
+    local results = {pcall(performImport, charData, payload, h)}
+    if not results[1] then
+        print(Export.message("importerror", tostring(results[2])))
+        return false, "error"
+    end
+    local before, after = results[2], results[3]
+
+    local gained = {}
+    for _, counted in ipairs(COUNTED) do
+        local delta = after[counted.field] - before[counted.field]
+        if delta > 0 then gained[#gained + 1] = delta .. " " .. counted.label end
+    end
+
+    if #gained == 0 then
+        print(Export.message("nothing"))
+        return false, "nothing"
+    end
+
+    print("Field Journal: imported " .. table.concat(gained, ", ") .. ".")
+    return true, "imported"
+end

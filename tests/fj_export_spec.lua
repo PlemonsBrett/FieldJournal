@@ -241,6 +241,127 @@ local function test_only_core_export_lua_touches_the_serialisation_pipeline()
     end
 end
 
+local function test_import_merges_a_deep_copy_and_never_aliases()
+    local fj = load()
+    local text = fj.Export.encode(populated())
+
+    local target = freshChar()
+    local lines, imported = quietly(fj.Export.importString, target, text)
+    assert(imported == true, "a valid export must import, chat was:\n" .. table.concat(lines, "\n"))
+    assert(target.entries["quest:10"].body == "I found it.", "the entry must arrive")
+    assert(#target.encounters == 1, "the encounter must arrive")
+    assert(target.diaryEvents[1].key == "diary:1", "the diary event must arrive")
+    assert(target.craftEvents[1].key == "craft:1", "the craft event must arrive")
+    assert(target.bestiary["creature:99"].kills == 1, "the bestiary must arrive")
+    assert(target.objectiveState["10:1"] == "done", "objectiveState must arrive")
+    assert(target.questBookmarks[10] == true, "questBookmarks must arrive")
+    assert(target.nextOrder >= 7,
+        "nextOrder must be lifted above every imported record, got " .. target.nextOrder)
+    assert(table.concat(lines, "\n"):find("imported 2 entries, 1 encounters", 1, true),
+        "expected the import report, got:\n" .. table.concat(lines, "\n"))
+
+    -- Migrations.mergeIntoCharacter inserts source record tables by reference,
+    -- so importing the decoded payload itself would leave live records aliased
+    -- to tables this session also still holds.
+    local payload = fj.Export.decode(text)
+    assert(target.entries["quest:10"] ~= payload.data.entries["quest:10"],
+        "an imported record must never be the same table as a decoded payload's record")
+end
+
+local function test_import_drops_superseded_placeholders()
+    local fj = load()
+    local text = fj.Export.encode(populated())
+
+    -- This character already captured quest 11's real text, so the export's
+    -- past:11 placeholder must not come back and list the quest twice.
+    local target = freshChar()
+    target.entries["quest:11"] = {key = "quest:11", kind = "quest", questID = 11,
+        title = "An Older Errand", body = "I remember this one.", order = 2}
+    quietly(fj.Export.importString, target, text)
+    assert(target.entries["past:11"] == nil,
+        "importing must not resurrect a placeholder the player has already replaced")
+    assert(target.entries["quest:11"].body == "I remember this one.",
+        "the player's own captured text must win")
+end
+
+local function test_import_is_idempotent()
+    local fj = load()
+    local text = fj.Export.encode(populated())
+
+    local target = freshChar()
+    quietly(fj.Export.importString, target, text)
+    local firstCounts = fj.Migrations.counts(target)
+    local order = target.nextOrder
+
+    local lines, imported, reason = quietly(fj.Export.importString, target, text)
+    assert(imported == false and reason == "nothing",
+        "a second identical import must report that nothing was missing, got " .. tostring(reason))
+    local secondCounts = fj.Migrations.counts(target)
+    for field, value in pairs(firstCounts) do
+        assert(secondCounts[field] == value,
+            "importing twice changed " .. field .. ": " .. value .. " -> " .. secondCounts[field])
+    end
+    assert(target.nextOrder == order, "a no-op import must not move nextOrder")
+    assert(table.concat(lines, "\n"):find("nothing this character was missing", 1, true),
+        "expected the no-op explanation, got:\n" .. table.concat(lines, "\n"))
+end
+
+local function test_import_never_overwrites_an_existing_record()
+    local fj = load()
+    local text = fj.Export.encode(populated())
+
+    local target = freshChar()
+    target.entries["quest:10"] = {key = "quest:10", kind = "quest", questID = 10,
+        title = "The Lost Satchel", body = "My own words.", order = 2}
+    quietly(fj.Export.importString, target, text)
+    assert(target.entries["quest:10"].body == "My own words.",
+        "an import must never overwrite an entry this character already has")
+end
+
+local function test_import_rejects_garbage_before_touching_the_journal()
+    local fj = load()
+    local target = populated()
+    local before = fj.Migrations.counts(target)
+
+    local lines, imported, reason = quietly(fj.Export.importString, target, "totally bogus!!")
+    assert(imported == false and reason == "decode", "junk must be refused, got " .. tostring(reason))
+    local after = fj.Migrations.counts(target)
+    for field, value in pairs(before) do
+        assert(after[field] == value, "a refused import changed " .. field)
+    end
+    assert(table.concat(lines, "\n"):find("not a Field Journal export", 1, true),
+        "expected a clear rejection, got:\n" .. table.concat(lines, "\n"))
+end
+
+local function test_import_rejects_an_incompatible_schema_before_merging()
+    local fj = load()
+    local payload = fj.Export.buildPayload(populated())
+    payload.schemaVersion = 99
+    -- Built through the libraries directly because this string is deliberately
+    -- something Core/Export.lua would never produce.
+    local LibDeflate = LibStub("LibDeflate")
+    local AceSerializer = LibStub("AceSerializer-3.0")
+    local text = LibDeflate:EncodeForPrint(LibDeflate:CompressDeflate(AceSerializer:Serialize(payload)))
+
+    local target = freshChar()
+    local lines, imported, reason = quietly(fj.Export.importString, target, text)
+    assert(imported == false and reason == "schema",
+        "a foreign schema must be refused, got " .. tostring(reason))
+    assert(next(target.entries) == nil, "not one record may be merged from a rejected export")
+    assert(#target.encounters == 0, "not one record may be merged from a rejected export")
+    assert(table.concat(lines, "\n"):find("schema v99", 1, true),
+        "the rejection must name the foreign schema, got:\n" .. table.concat(lines, "\n"))
+end
+
+local function test_import_is_safe_without_a_database()
+    local fj = load()
+    local lines, imported, reason = quietly(fj.Export.importString, nil, "anything")
+    assert(imported == false and reason == "unavailable",
+        "importString must degrade when there is no character data, got " .. tostring(reason))
+    assert(table.concat(lines, "\n"):find("not available", 1, true),
+        "expected the degraded explanation, got:\n" .. table.concat(lines, "\n"))
+end
+
 return {
     test_payload_carries_the_envelope_and_excludes_the_backup_ring = test_payload_carries_the_envelope_and_excludes_the_backup_ring,
     test_encode_refuses_an_empty_journal = test_encode_refuses_an_empty_journal,
@@ -249,5 +370,12 @@ return {
     test_validate_rejects_a_foreign_or_incompatible_payload = test_validate_rejects_a_foreign_or_incompatible_payload,
     test_describe_payload_names_the_character_the_date_and_the_counts = test_describe_payload_names_the_character_the_date_and_the_counts,
     test_export_is_safe_without_a_database = test_export_is_safe_without_a_database,
+    test_import_merges_a_deep_copy_and_never_aliases = test_import_merges_a_deep_copy_and_never_aliases,
+    test_import_drops_superseded_placeholders = test_import_drops_superseded_placeholders,
+    test_import_is_idempotent = test_import_is_idempotent,
+    test_import_never_overwrites_an_existing_record = test_import_never_overwrites_an_existing_record,
+    test_import_rejects_garbage_before_touching_the_journal = test_import_rejects_garbage_before_touching_the_journal,
+    test_import_rejects_an_incompatible_schema_before_merging = test_import_rejects_an_incompatible_schema_before_merging,
+    test_import_is_safe_without_a_database = test_import_is_safe_without_a_database,
     test_only_core_export_lua_touches_the_serialisation_pipeline = test_only_core_export_lua_touches_the_serialisation_pipeline,
 }
