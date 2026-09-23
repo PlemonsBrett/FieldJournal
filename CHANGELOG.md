@@ -49,6 +49,24 @@
 
 **Full Changelog**: https://github.com/PlemonsBrett/FieldJournal/commits/v0.8.0-beta
 
+## Settings panel and tab visibility
+
+The journal's header now carries a small button beside the close button. It opens a settings panel holding Export, Import, Backup now and Repair — the same four actions as the slash commands, running the same code, so none of them has to be typed any more.
+
+The panel also holds three per-character checkboxes for the Daily diary, Bestiary and Crafting & gathering tabs. Unchecking one removes that tab from the tab row straight away, with no gap left behind, and returns you to Quests if you were reading the tab you just hid. The Quests tab is never hideable.
+
+**Hiding a tab never stops recording.** Everything the addon watched before it is still recorded and stored in the background; the setting changes only what the tab row displays. Re-check the box later and the tab comes back carrying everything that happened while it was hidden. The choices are stored per character alongside the window position, so they survive a logout.
+
+## Export and import
+
+`/fj export` turns the current character's journal into a single printable string and shows it in a small window with the whole string already selected — press Ctrl-C and paste it into a text file, a chat message, or another machine. The string is your journal compressed and encoded, so it uses only letters, digits and parentheses and survives being copied through anything. The rotating backup ring is deliberately **not** included: the receiving character builds its own, and carrying five extra copies would multiply the string's size for no benefit.
+
+`/fj import` opens a box to paste a string into (WoW's chat line is capped at 255 characters, far shorter than any real export, so pasting into the box is the normal path; `/fj import <string>` still works for short strings and macros). Nothing is merged until the string has been decoded, decompressed, read, and confirmed to be a Field Journal export of a journal schema this version understands. Anything else — another addon's export string, a half-copied one, one from a future version — is refused with a message saying which check failed, and your journal is left exactly as it was.
+
+An import merges rather than replaces, with the same identity-based, never-overwrite, keep-the-higher-count rules the addon uses everywhere else: your own records always win, nothing is duplicated, and importing the same string twice reports that there was nothing to add. It works on a copy of the decoded data, so an imported record is never the same table as the string you pasted; it re-applies the rule that removes an earlier-quest placeholder once you have captured that quest's real text, so importing cannot make a quest appear twice; and it lifts the record counter above everything it just added so new records cannot collide with imported ones. After a successful import the bestiary index is rebuilt from the encounter log, exactly as `/fj repair` does, so creatures restored from the string are counted in the same command.
+
+This also makes `/fj export` a cross-character and cross-machine transfer: export on one character, import on another.
+
 ## Rotating self-heal backups
 
 Field Journal now keeps its own backups. At each login it takes a snapshot of the current character's journal and stores it in a five-slot rotating ring inside that character's saved data. A snapshot is skipped when nothing has changed since the last one, and — importantly — it is also skipped, with a warning, when the character has *fewer* records than its most recent snapshot. That second rule exists so a session that loads damaged or empty data can never quietly rotate five good snapshots out of the ring one login at a time.

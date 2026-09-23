@@ -4,10 +4,76 @@ local FieldJournal = select(2, ...)
 
 local clean = FieldJournal.clean
 
+-- Shared by /fj import's two entry points: a string pasted after the command,
+-- and the Import button in the paste box. The rebuild afterwards mirrors
+-- /fj repair's, and for the same reason: an import can restore encounters, and
+-- the derived bestiary index is rebuilt from the encounter log by
+-- initializeCharacter(), so clearing loadedCharacterKey and running it again
+-- counts anything the import just put back -- in the same command.
+--
+-- Everything about the payload itself -- decoding, validating, merging,
+-- reporting -- belongs to Core/Export.lua. This file never inspects an export
+-- string or a decoded payload; it only decides what to do with the boolean.
+local function importAndRebuild(text)
+    local imported = FieldJournal.Export.importString(FieldJournal.charData, text)
+    if not imported then return end
+    FieldJournal.loadedCharacterKey = nil
+    FieldJournal.initializeCharacter()
+    FieldJournal.UI.RefreshIfShown()
+    print("Field Journal: rebuilt the bestiary index from the imported encounters where needed.")
+end
+
 SLASH_FIELDJOURNAL1 = "/fieldjournal"
 SLASH_FIELDJOURNAL2 = "/fj"
 SlashCmdList.FIELDJOURNAL = function(message)
     local command, remainder = (message or ""):match("^(%S+)%s*(.-)%s*$")
+    if command == "export" then
+        FieldJournal.initializeCharacter()
+        if not FieldJournal.Export then
+            print("Field Journal: the export module did not load.")
+            return
+        end
+        local text, reason = FieldJournal.Export.encode(FieldJournal.charData)
+        if not text then
+            print(FieldJournal.Export.message(reason))
+            return
+        end
+        if type(FieldJournal.UI.showCopyBox) ~= "function" then
+            print("Field Journal: the export window is unavailable.")
+            return
+        end
+        if FieldJournal.UI.showCopyBox("Field Journal export",
+            "Already selected. Press Ctrl-C to copy, then Escape to close.", text) then
+            print("Field Journal: export ready, " .. #text
+                .. " characters. Save it somewhere outside the game.")
+        end
+        return
+    end
+    if command == "import" then
+        FieldJournal.initializeCharacter()
+        if not FieldJournal.Export then
+            print("Field Journal: the export module did not load.")
+            return
+        end
+        local pasted = clean(remainder)
+        -- WoW's chat edit box truncates at 255 characters and an export string
+        -- is thousands, so typing one after the command cannot work for a real
+        -- journal. The no-argument form opens a paste box instead, which is the
+        -- normal path; the argument form is kept for short strings and macros
+        -- and shares importAndRebuild with the button.
+        if pasted == "" then
+            if type(FieldJournal.UI.showPasteBox) ~= "function" then
+                print("Field Journal: the import window is unavailable.")
+                return
+            end
+            FieldJournal.UI.showPasteBox("Field Journal import",
+                "Paste an export string with Ctrl-V, then choose Import. Nothing you already have is overwritten.",
+                importAndRebuild)
+            return
+        end
+        importAndRebuild(pasted)
+        return
+    end
     if command == "repair" then
         -- Two independent repairs, in this order and for this reason:
         --   1. Merge anything the live journal has lost back out of the backup

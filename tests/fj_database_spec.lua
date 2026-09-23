@@ -113,6 +113,12 @@ local function test_profile_defaults_are_present()
         "defaults.profile.lastTab must default to \"quests\", got " .. tostring(fj.Database.defaults.profile.lastTab))
     assert(fj.Database.defaults.profile.windowPoint == nil,
         "defaults.profile.windowPoint must default to nil until the player moves the window")
+    assert(fj.Database.defaults.profile.showDiary == true,
+        "defaults.profile.showDiary must default to true")
+    assert(fj.Database.defaults.profile.showBestiary == true,
+        "defaults.profile.showBestiary must default to true")
+    assert(fj.Database.defaults.profile.showCrafting == true,
+        "defaults.profile.showCrafting must default to true")
     local lines, release = capturePrint()
     local db = fj.Database.initialize()
     release()
