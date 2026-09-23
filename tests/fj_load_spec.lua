@@ -17,6 +17,7 @@ local MODULES = {
     "UI/Widgets.lua",
     "UI/NoteEditor.lua",
     "UI/Window.lua",
+    "UI/Settings.lua",
 }
 
 local function assertFunctions(tbl, label, names)
@@ -41,7 +42,7 @@ local function test_all_modules_load_into_one_namespace()
     assert(fj.mergeAccountRecovery == nil, "mergeAccountRecovery moved to Migrations.accountSlice")
     assertFunctions(fj.UI, "FieldJournal.UI", {"Refresh", "RefreshIfShown"})
     assertFunctions(fj.UI, "FieldJournal.UI",
-        {"makeLabel", "coloredRectangle", "makeButton", "showCopyBox", "showPasteBox"})
+        {"makeLabel", "coloredRectangle", "makeButton", "showCopyBox", "showPasteBox", "createSettingsPanel"})
     assertFunctions(fj.UI, "FieldJournal.UI",
         {"questOptions", "refreshQuestPicker", "openQuestPicker", "createNoteEditor", "createQuestPicker"})
     assertFunctions(fj.UI, "FieldJournal.UI",

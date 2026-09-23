@@ -492,6 +492,11 @@ local function createWindow()
     local close = FieldJournal.UI.makeButton(window, 22, 22, "X")
     close:SetPoint("TOPRIGHT", -7, -8)
     close:SetScript("OnClick", function() window:Hide() end)
+    local settingsButton = FieldJournal.UI.makeButton(window, 22, 22, "*")
+    settingsButton:SetPoint("TOPRIGHT", close, "TOPLEFT", -4, 0)
+    settingsButton:SetScript("OnClick", function()
+        if FieldJournal.UI.settingsPanel then FieldJournal.UI.settingsPanel:Show() end
+    end)
     window:Hide()
 
     -- All four buttons are always created (toggling a setting must not require
@@ -655,6 +660,7 @@ local function createWindow()
     layoutTabs()
     FieldJournal.UI.createNoteEditor()
     FieldJournal.UI.createQuestPicker()
+    FieldJournal.UI.createSettingsPanel()
     window:SetScript("OnShow", function()
         if FieldJournal.initializeCharacter then FieldJournal.initializeCharacter() end
         FieldJournal.QuestLog.syncActiveQuestLog()
