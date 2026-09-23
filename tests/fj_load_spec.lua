@@ -211,11 +211,42 @@ local function test_visible_tabs_always_keeps_quests_even_if_everything_else_is_
         "quests must never be hideable, got " .. #visible .. " tabs")
 end
 
+-- FieldJournal.UI.tabVisible is the single accessor both the tab bar
+-- (visibleTabs) and the settings panel's checkboxes call -- this proves they
+-- can never disagree, because there is only one predicate for either of them
+-- to call.
+local function test_tab_visible_agrees_with_visible_tabs()
+    local fj = env.loadModules(MODULES)
+    fj.db = {profile = {showBestiary = false}}
+
+    assert(fj.UI.tabVisible("quests") == true, "quests must always be visible")
+    assert(fj.UI.tabVisible("diary") == true, "diary must be visible by default")
+    assert(fj.UI.tabVisible("bestiary") == false, "bestiary must be hidden when showBestiary is false")
+    assert(fj.UI.tabVisible("craft") == true, "craft must be visible by default")
+
+    local visible = fj.UI.visibleTabs()
+    local shown = {}
+    for _, tab in ipairs(visible) do shown[tab[1]] = true end
+    for _, tab in ipairs({"quests", "diary", "bestiary", "craft"}) do
+        assert((shown[tab] == true) == fj.UI.tabVisible(tab),
+            "visibleTabs() and tabVisible(" .. tab .. ") disagree")
+    end
+end
+
+local function test_tab_visible_is_safe_without_a_database()
+    local fj = env.loadModules(MODULES)
+    fj.db = nil
+    assert(fj.UI.tabVisible("quests") == true, "quests must always be visible even without a database")
+    assert(fj.UI.tabVisible("diary") == true, "tabVisible must default to shown without a database")
+end
+
 return {
     test_all_modules_load_into_one_namespace = test_all_modules_load_into_one_namespace,
     test_visible_tabs_shows_everything_by_default = test_visible_tabs_shows_everything_by_default,
     test_visible_tabs_hides_a_disabled_tab_but_keeps_order = test_visible_tabs_hides_a_disabled_tab_but_keeps_order,
     test_visible_tabs_always_keeps_quests_even_if_everything_else_is_off = test_visible_tabs_always_keeps_quests_even_if_everything_else_is_off,
+    test_tab_visible_agrees_with_visible_tabs = test_tab_visible_agrees_with_visible_tabs,
+    test_tab_visible_is_safe_without_a_database = test_tab_visible_is_safe_without_a_database,
     test_the_string_dialog_helpers_never_throw_without_a_real_client = test_the_string_dialog_helpers_never_throw_without_a_real_client,
     test_refresh_if_shown_is_safe_without_a_window = test_refresh_if_shown_is_safe_without_a_window,
     test_window_position_round_trips_through_the_profile = test_window_position_round_trips_through_the_profile,

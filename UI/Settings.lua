@@ -31,7 +31,8 @@ end
 
 local function createSettingsPanel()
     local window = FieldJournal.UI.window
-    local panel = CreateFrame("Frame", nil, window)
+    local panel = CreateFrame("Frame", "FieldJournalSettingsPanel", window)
+    tinsert(UISpecialFrames, "FieldJournalSettingsPanel")
     FieldJournal.UI.settingsPanel = panel
     panel:SetSize(320, 300)
     panel:SetPoint("CENTER", window, "CENTER", 0, 0)
@@ -55,11 +56,11 @@ local function createSettingsPanel()
 
     local toggles = {}
     local toggleDefs = {
-        {label = "Daily diary", get = function() return not FieldJournal.db or not FieldJournal.db.profile or FieldJournal.db.profile.showDiary ~= false end,
+        {label = "Daily diary", get = function() return FieldJournal.UI.tabVisible("diary") end,
             set = function(value) if FieldJournal.db and FieldJournal.db.profile then FieldJournal.db.profile.showDiary = value end end},
-        {label = "Bestiary", get = function() return not FieldJournal.db or not FieldJournal.db.profile or FieldJournal.db.profile.showBestiary ~= false end,
+        {label = "Bestiary", get = function() return FieldJournal.UI.tabVisible("bestiary") end,
             set = function(value) if FieldJournal.db and FieldJournal.db.profile then FieldJournal.db.profile.showBestiary = value end end},
-        {label = "Crafting & gathering", get = function() return not FieldJournal.db or not FieldJournal.db.profile or FieldJournal.db.profile.showCrafting ~= false end,
+        {label = "Crafting & gathering", get = function() return FieldJournal.UI.tabVisible("craft") end,
             set = function(value) if FieldJournal.db and FieldJournal.db.profile then FieldJournal.db.profile.showCrafting = value end end},
     }
     for index, def in ipairs(toggleDefs) do

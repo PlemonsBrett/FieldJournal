@@ -18,16 +18,23 @@ local ALL_TABS = {{"quests", "Quests"}, {"diary", "Daily diary"},
 -- Pure: no frame calls, so this is the one piece of this file's tab logic
 -- that can run under tests/wow_env.lua. Quests is never hideable -- it is
 -- the addon's core feature, not an optional collection like the other three.
-local function visibleTabs()
+-- This is the ONE place the "is this tab/toggle visible" predicate is
+-- expressed -- UI/Settings.lua's tab-visibility checkboxes call this
+-- function rather than re-deriving the rule, so the tab bar and the
+-- settings panel can never disagree about what a given profile flag means.
+local PROFILE_FIELD_BY_TAB = {diary = "showDiary", bestiary = "showBestiary", craft = "showCrafting"}
+local function tabVisible(key)
+    if key == "quests" then return true end
+    local field = PROFILE_FIELD_BY_TAB[key]
+    if not field then return true end
     local profile = FieldJournal.db and FieldJournal.db.profile
+    return not profile or profile[field] ~= false
+end
+
+local function visibleTabs()
     local result = {}
     for _, tab in ipairs(ALL_TABS) do
-        local key = tab[1]
-        local show = key == "quests"
-            or (key == "diary" and (not profile or profile.showDiary ~= false))
-            or (key == "bestiary" and (not profile or profile.showBestiary ~= false))
-            or (key == "craft" and (not profile or profile.showCrafting ~= false))
-        if show then result[#result + 1] = tab end
+        if tabVisible(tab[1]) then result[#result + 1] = tab end
     end
     return result
 end
@@ -361,8 +368,8 @@ end
 
 -- Repositions the tab row so a hidden tab leaves no gap, and falls back to
 -- "quests" if the tab currently being viewed just became hidden. Called once
--- at window creation and again by Task 8's settings-panel checkboxes whenever
--- a visibility setting changes.
+-- at window creation and again by UI/Settings.lua's tab-visibility checkboxes
+-- whenever a visibility setting changes.
 local function layoutTabs()
     local shown = {}
     for _, tab in ipairs(visibleTabs()) do shown[tab[1]] = true end
@@ -668,6 +675,7 @@ local function createWindow()
     end)
 end
 
+FieldJournal.UI.tabVisible = tabVisible
 FieldJournal.UI.visibleTabs = visibleTabs
 FieldJournal.UI.layoutTabs = layoutTabs
 FieldJournal.UI.matchingEntries = matchingEntries

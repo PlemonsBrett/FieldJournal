@@ -91,7 +91,10 @@ local MESSAGES = {
 
 --- The chat line for a reason token returned by any function in this file,
 --  already prefixed. Published so no other file ever writes its own wording for
---  an export failure -- see the ownership rule in this plan's Global Constraints.
+--  an export failure -- Core/Export.lua is the only file that may call
+--  Serialize/Deserialize/CompressDeflate/DecompressDeflate/EncodeForPrint/
+--  DecodeForPrint, enforced by test_only_core_export_lua_touches_the_serialisation_pipeline
+--  in tests/fj_export_spec.lua.
 function Export.message(reason, detail)
     local text = MESSAGES[reason] or MESSAGES.error
     if type(detail) == "string" and detail ~= "" then text = text .. " " .. detail end
