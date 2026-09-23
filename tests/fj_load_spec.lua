@@ -185,8 +185,36 @@ local function test_the_string_dialog_helpers_never_throw_without_a_real_client(
         "unexpected import failure line: " .. captured[2])
 end
 
+local function test_visible_tabs_shows_everything_by_default()
+    local fj = env.loadModules(MODULES)
+    fj.db = {profile = {}}
+    local visible = fj.UI.visibleTabs()
+    assert(#visible == 4, "expected all four tabs by default, got " .. #visible)
+    assert(visible[1][1] == "quests", "quests must be first")
+end
+
+local function test_visible_tabs_hides_a_disabled_tab_but_keeps_order()
+    local fj = env.loadModules(MODULES)
+    fj.db = {profile = {showBestiary = false}}
+    local visible = fj.UI.visibleTabs()
+    assert(#visible == 3, "expected three tabs with bestiary hidden, got " .. #visible)
+    assert(visible[1][1] == "quests" and visible[2][1] == "diary" and visible[3][1] == "craft",
+        "the remaining tabs must keep their relative order")
+end
+
+local function test_visible_tabs_always_keeps_quests_even_if_everything_else_is_off()
+    local fj = env.loadModules(MODULES)
+    fj.db = {profile = {showDiary = false, showBestiary = false, showCrafting = false}}
+    local visible = fj.UI.visibleTabs()
+    assert(#visible == 1 and visible[1][1] == "quests",
+        "quests must never be hideable, got " .. #visible .. " tabs")
+end
+
 return {
     test_all_modules_load_into_one_namespace = test_all_modules_load_into_one_namespace,
+    test_visible_tabs_shows_everything_by_default = test_visible_tabs_shows_everything_by_default,
+    test_visible_tabs_hides_a_disabled_tab_but_keeps_order = test_visible_tabs_hides_a_disabled_tab_but_keeps_order,
+    test_visible_tabs_always_keeps_quests_even_if_everything_else_is_off = test_visible_tabs_always_keeps_quests_even_if_everything_else_is_off,
     test_the_string_dialog_helpers_never_throw_without_a_real_client = test_the_string_dialog_helpers_never_throw_without_a_real_client,
     test_refresh_if_shown_is_safe_without_a_window = test_refresh_if_shown_is_safe_without_a_window,
     test_window_position_round_trips_through_the_profile = test_window_position_round_trips_through_the_profile,

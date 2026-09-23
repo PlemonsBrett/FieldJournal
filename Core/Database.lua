@@ -69,6 +69,9 @@ Database.defaults = {
     profile = {
         windowPoint = nil,
         lastTab = "quests",
+        showDiary = true,
+        showBestiary = true,
+        showCrafting = true,
     },
 }
 

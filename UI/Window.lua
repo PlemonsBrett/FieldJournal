@@ -12,6 +12,25 @@ local relatedKeys = {}
 local relatedIndex = 0
 local currentTab = "quests"
 local tabButtons = {}
+local ALL_TABS = {{"quests", "Quests"}, {"diary", "Daily diary"},
+    {"bestiary", "Bestiary"}, {"craft", "Crafting & gathering"}}
+
+-- Pure: no frame calls, so this is the one piece of this file's tab logic
+-- that can run under tests/wow_env.lua. Quests is never hideable -- it is
+-- the addon's core feature, not an optional collection like the other three.
+local function visibleTabs()
+    local profile = FieldJournal.db and FieldJournal.db.profile
+    local result = {}
+    for _, tab in ipairs(ALL_TABS) do
+        local key = tab[1]
+        local show = key == "quests"
+            or (key == "diary" and (not profile or profile.showDiary ~= false))
+            or (key == "bestiary" and (not profile or profile.showBestiary ~= false))
+            or (key == "craft" and (not profile or profile.showCrafting ~= false))
+        if show then result[#result + 1] = tab end
+    end
+    return result
+end
 local zoneButton
 local detailText
 local detailScrollChild
@@ -340,6 +359,33 @@ local function showDetail(entry)
     end
 end
 
+-- Repositions the tab row so a hidden tab leaves no gap, and falls back to
+-- "quests" if the tab currently being viewed just became hidden. Called once
+-- at window creation and again by Task 8's settings-panel checkboxes whenever
+-- a visibility setting changes.
+local function layoutTabs()
+    local shown = {}
+    for _, tab in ipairs(visibleTabs()) do shown[tab[1]] = true end
+    local index = 0
+    for _, tab in ipairs(ALL_TABS) do
+        local button = tabButtons[tab[1]]
+        if button then
+            if shown[tab[1]] then
+                index = index + 1
+                button:ClearAllPoints()
+                button:SetPoint("TOPLEFT", 28 + (index - 1) * 168, -49)
+                button:Show()
+            else
+                button:Hide()
+            end
+        end
+    end
+    if not shown[currentTab] then
+        currentTab = "quests"
+        if FieldJournal.db and FieldJournal.db.profile then FieldJournal.db.profile.lastTab = "quests" end
+    end
+end
+
 function FieldJournal.UI.Refresh()
     if not FieldJournal.UI.window then return end
     visibleKeys = matchingEntries()
@@ -448,9 +494,10 @@ local function createWindow()
     close:SetScript("OnClick", function() window:Hide() end)
     window:Hide()
 
-    local tabList = {{"quests", "Quests"}, {"diary", "Daily diary"},
-        {"bestiary", "Bestiary"}, {"craft", "Crafting & gathering"}}
-    for index, tab in ipairs(tabList) do
+    -- All four buttons are always created (toggling a setting must not require
+    -- rebuilding the window), and layoutTabs() decides which are shown and
+    -- where, every time visibility can have changed.
+    for index, tab in ipairs(ALL_TABS) do
         local button = FieldJournal.UI.makeButton(window, 163, 25, tab[2])
         button:SetPoint("TOPLEFT", 28 + (index - 1) * 168, -49)
         button:SetScript("OnClick", function()
@@ -605,6 +652,7 @@ local function createWindow()
         FieldJournal.UI.noteEditBox:SetFocus()
     end)
 
+    layoutTabs()
     FieldJournal.UI.createNoteEditor()
     FieldJournal.UI.createQuestPicker()
     window:SetScript("OnShow", function()
@@ -614,6 +662,8 @@ local function createWindow()
     end)
 end
 
+FieldJournal.UI.visibleTabs = visibleTabs
+FieldJournal.UI.layoutTabs = layoutTabs
 FieldJournal.UI.matchingEntries = matchingEntries
 FieldJournal.UI.zones = zones
 FieldJournal.UI.renderDetailBlocks = renderDetailBlocks
