@@ -49,6 +49,14 @@
 
 **Full Changelog**: https://github.com/PlemonsBrett/FieldJournal/commits/v0.8.0-beta
 
+## Settings panel and tab visibility
+
+The journal's header now carries a small button beside the close button. It opens a settings panel holding Export, Import, Backup now and Repair — the same four actions as the slash commands, running the same code, so none of them has to be typed any more.
+
+The panel also holds three per-character checkboxes for the Daily diary, Bestiary and Crafting & gathering tabs. Unchecking one removes that tab from the tab row straight away, with no gap left behind, and returns you to Quests if you were reading the tab you just hid. The Quests tab is never hideable.
+
+**Hiding a tab never stops recording.** Everything the addon watched before it is still recorded and stored in the background; the setting changes only what the tab row displays. Re-check the box later and the tab comes back carrying everything that happened while it was hidden. The choices are stored per character alongside the window position, so they survive a logout.
+
 ## Export and import
 
 `/fj export` turns the current character's journal into a single printable string and shows it in a small window with the whole string already selected — press Ctrl-C and paste it into a text file, a chat message, or another machine. The string is your journal compressed and encoded, so it uses only letters, digits and parentheses and survives being copied through anything. The rotating backup ring is deliberately **not** included: the receiving character builds its own, and carrying five extra copies would multiply the string's size for no benefit.

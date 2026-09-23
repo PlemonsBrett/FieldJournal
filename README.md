@@ -2,7 +2,7 @@
 
 > 🎨 **Artists wanted!** The journal already records map coordinates, creature IDs and item IDs for everything it sees — it just doesn't draw any of it yet. If you can make icons, portraits, or a journal-style map, see [issue #6](https://github.com/PlemonsBrett/FieldJournal/issues/6). No Lua required to contribute a mockup or asset set.
 
-Open the journal with `/fj` or `/fieldjournal`. This version has four tabs:
+Open the journal with `/fj` or `/fieldjournal`. This version has four tabs — the last three can be hidden from the settings panel, which never stops them recording:
 
 - **Quests** keeps the quest log text, observed NPC dialogue, readable notes, kills and picked up quest items in chronological margins. It links speech from a recent quest giver when the speaker and location match one unambiguous quest. Previous quest stages and completed objectives are crossed out.
 - **Daily diary** records newly learned spells, group joins, and merchant purchases and sales when the client exposes enough information.
@@ -62,6 +62,8 @@ Publishing that draft (GitHub → Releases → Edit draft → Publish) is what u
 WoW writes `FieldJournalDB` to the account's `WTF/Account/<account>/SavedVariables/FieldJournal.lua` on `/reload` and logout, and a complete per-character second copy to `WTF/Account/<account>/<realm>/<character>/SavedVariables/FieldJournal.lua`. `/fj status` prints the current character key, schema version, migration state, saved encounter/bestiary/crafting counts, and how full the backup ring is. `/fj backup` lists the five rotating snapshots; `/fj backup now` takes one on the spot. If data looks missing, or the bestiary list appears empty, use `/fj repair`: it merges anything the backup ring still has back in, then rebuilds the bestiary index from the encounter history. Repairing is safe to run more than once — it never overwrites or duplicates what is already there. Do not replace the live SavedVariables file while the game is running.
 
 For a copy that lives outside the game entirely, use `/fj export`: it shows this character's whole journal as one printable string, already selected, so Ctrl-C copies it straight into a text file. `/fj import` opens a box to paste one back into — it validates the string before merging anything, merges rather than replaces (your own records always win), and is safe to run twice. The backup ring is not part of an export; each character keeps its own.
+
+The small button beside the journal's close button opens a settings panel with the same export, import, `/fj backup now` and `/fj repair` actions as buttons, so none of them needs a typed command. It also holds three per-character checkboxes that hide the Daily diary, Bestiary or Crafting & gathering tab from the tab row; Quests is never hideable. Hiding a tab changes only what is displayed — the addon keeps recording into it, and re-showing it later brings back everything that happened in the meantime. Those choices are stored per character with the window position.
 
 ## Earlier quest text
 
